@@ -20,7 +20,8 @@ describe('chatClient helpers', () => {
     expect(payload.messages[0].role).toBe('system');
     expect(payload.messages[1].content).toContain('学校 / 教室');
     expect(payload.messages[1].content).toContain('林澄');
-    expect(payload.messages[0].content).toContain('旁白');
+    expect(payload.messages[0].content).toContain('中文小说片段');
+    expect(payload.messages[0].content).toContain('对白自然地融入叙述');
     expect(payload.messages[0].content).toContain('不要代替玩家');
     expect(payload.messages[1].content).toContain('性别：女');
   });
@@ -92,6 +93,7 @@ describe('chatClient helpers', () => {
     });
 
     expect(payload.messages[1].content).toContain('玩家准备结束当前事件');
+    expect(payload.messages[1].content).toContain('像小说收束一幕');
     expect(payload.messages[1].content).toContain('[EVENT_END]');
   });
 });
