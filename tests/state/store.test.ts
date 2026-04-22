@@ -7,8 +7,10 @@ import {
   enterScene,
   finishStreamingReply,
   markEventReadyToEnd,
+  setStreamCharsPerSecond,
   startEvent,
-  startStreamingReply
+  startStreamingReply,
+  toggleSettingsPanel
 } from '../../src/state/store';
 
 describe('store transitions', () => {
@@ -55,5 +57,18 @@ describe('store transitions', () => {
     state = markEventReadyToEnd(state);
 
     expect(state.event.readyToEnd).toBe(true);
+  });
+
+  it('toggles settings panel and updates stream speed limit', () => {
+    let state = createInitialState();
+
+    expect(state.ui.isSettingsOpen).toBe(false);
+    expect(state.settings.streamCharsPerSecond).toBe(8);
+
+    state = toggleSettingsPanel(state);
+    expect(state.ui.isSettingsOpen).toBe(true);
+
+    state = setStreamCharsPerSecond(state, 1);
+    expect(state.settings.streamCharsPerSecond).toBe(1);
   });
 });

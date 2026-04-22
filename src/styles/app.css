@@ -235,3 +235,45 @@ body {
   margin: 8px 0 0;
   padding-left: 18px;
 }
+
+.settings-panel {
+  display: grid;
+  gap: 14px;
+  padding: 6px 2px 2px;
+}
+
+.settings-header h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.settings-header p,
+.settings-hint {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-slider {
+  width: 100%;
+}
+
+.settings-close {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #8a74ff;
+  color: white;
+  cursor: pointer;
+}

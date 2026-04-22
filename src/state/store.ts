@@ -1,5 +1,6 @@
 import { worldData } from '../data/world';
 import type { Mode } from '../data/types';
+import { clampStreamCharsPerSecond } from '../settings/storage';
 
 export interface TranscriptMessage {
   role: 'player' | 'character' | 'system';
@@ -15,6 +16,7 @@ export interface GameState {
   ui: {
     mode: Mode;
     isModelMenuOpen: boolean;
+    isSettingsOpen: boolean;
     isSending: boolean;
   };
   event: {
@@ -32,10 +34,13 @@ export interface GameState {
   settings: {
     availableModels: string[];
     currentModel: string;
+    streamCharsPerSecond: number;
   };
 }
 
-export const createInitialState = (): GameState => ({
+export const createInitialState = (
+  settingsOverride?: Partial<Pick<GameState['settings'], 'currentModel' | 'streamCharsPerSecond'>>
+): GameState => ({
   navigation: {
     currentRegionId: null,
     currentSceneId: null
@@ -43,6 +48,7 @@ export const createInitialState = (): GameState => ({
   ui: {
     mode: 'explore',
     isModelMenuOpen: false,
+    isSettingsOpen: false,
     isSending: false
   },
   event: {
@@ -59,7 +65,8 @@ export const createInitialState = (): GameState => ({
   },
   settings: {
     availableModels: ['deepseek-reasoner', 'deepseek-chat', 'gpt-4o-mini', 'gpt-4.1-mini', 'claude-3.5-sonnet'],
-    currentModel: 'deepseek-reasoner'
+    currentModel: settingsOverride?.currentModel ?? 'deepseek-reasoner',
+    streamCharsPerSecond: clampStreamCharsPerSecond(settingsOverride?.streamCharsPerSecond ?? 8)
   }
 });
 
@@ -72,6 +79,7 @@ export const enterRegion = (state: GameState, regionId: string): GameState => ({
   ui: {
     mode: 'explore',
     isModelMenuOpen: false,
+    isSettingsOpen: false,
     isSending: false
   }
 });
@@ -97,6 +105,7 @@ export const startEvent = (state: GameState, eventId: string): GameState => ({
   ui: {
     mode: 'event',
     isModelMenuOpen: false,
+    isSettingsOpen: false,
     isSending: false
   },
   event: {
@@ -114,6 +123,7 @@ export const endEvent = (state: GameState): GameState => ({
   ui: {
     mode: 'explore',
     isModelMenuOpen: false,
+    isSettingsOpen: false,
     isSending: false
   },
   event: {
@@ -151,7 +161,8 @@ export const toggleModelMenu = (state: GameState): GameState => ({
   ...state,
   ui: {
     ...state.ui,
-    isModelMenuOpen: !state.ui.isModelMenuOpen
+    isModelMenuOpen: !state.ui.isModelMenuOpen,
+    isSettingsOpen: false
   }
 });
 
@@ -164,6 +175,23 @@ export const setCurrentModel = (state: GameState, model: string): GameState => (
   ui: {
     ...state.ui,
     isModelMenuOpen: false
+  }
+});
+
+export const toggleSettingsPanel = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isSettingsOpen: !state.ui.isSettingsOpen,
+    isModelMenuOpen: false
+  }
+});
+
+export const setStreamCharsPerSecond = (state: GameState, value: number): GameState => ({
+  ...state,
+  settings: {
+    ...state.settings,
+    streamCharsPerSecond: clampStreamCharsPerSecond(value)
   }
 });
 

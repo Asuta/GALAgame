@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderApp } from '../../src/ui/renderApp';
-import { appendTranscriptMessage, createInitialState } from '../../src/state/store';
+import { appendTranscriptMessage, createInitialState, toggleSettingsPanel } from '../../src/state/store';
 
 describe('renderApp', () => {
   it('renders portrait visual area and dialogue panel', () => {
@@ -25,5 +25,17 @@ describe('renderApp', () => {
     expect(document.body.textContent).toContain('你');
     expect(document.body.textContent).toContain('林澄');
     expect(document.body.textContent).toContain('我还想再坐一会儿');
+  });
+
+  it('renders settings panel with stream speed control when opened', () => {
+    let state = createInitialState();
+    state = toggleSettingsPanel(state);
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('设置');
+    expect(document.body.textContent).toContain('文字显示速度');
+    expect((document.querySelector('[data-setting="stream-speed"]') as HTMLInputElement)?.value).toBe('8');
   });
 });

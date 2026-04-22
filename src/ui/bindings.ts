@@ -1,5 +1,7 @@
 import { worldData } from '../data/world';
 import { requestStoryReplyStream, stripEventEndMarker } from '../logic/chatClient';
+import { appendStreamWithRateLimit } from '../logic/streamDisplay';
+import { loadStoredSettings, saveStoredSettings } from '../settings/storage';
 import { compressMemory } from '../logic/memory';
 import {
   appendStreamingReply,
@@ -12,8 +14,10 @@ import {
   finishStreamingReply,
   markEventReadyToEnd,
   setCurrentModel,
+  setStreamCharsPerSecond,
   startEvent,
   startStreamingReply,
+  toggleSettingsPanel,
   toggleModelMenu,
   updateMemory,
   type GameState
@@ -46,7 +50,7 @@ const buildCharacterProfile = (name: string): string => {
 };
 
 export const bindUi = (root: HTMLDivElement): void => {
-  let state: GameState = createInitialState();
+  let state: GameState = createInitialState(loadStoredSettings());
 
   const runEventTurn = async (playerInput: string, intent: 'continue' | 'end_event') => {
     if (!state.event.activeEventId || state.ui.isSending) {
@@ -68,22 +72,26 @@ export const bindUi = (root: HTMLDivElement): void => {
     rerender();
 
     try {
-      for await (const chunk of requestStoryReplyStream({
-        model: state.settings.currentModel,
-        characterProfile: buildCharacterProfile(activeEvent.cast[0]),
-        memorySummary: state.memory.summary,
-        memoryFacts: state.memory.facts,
-        locationLabel: resolveLocationLabel(state),
-        eventTitle: activeEvent.title,
-        castName: activeEvent.cast[0],
-        transcript: state.event.transcript.map((message) => `${message.label}：${message.content}`),
-        playerInput:
-          intent === 'end_event' ? '请基于当前气氛，自然地把这一幕收尾。' : playerInput,
-        intent
-      })) {
-        state = appendStreamingReply(state, chunk);
-        rerender();
-      }
+      await appendStreamWithRateLimit({
+        source: requestStoryReplyStream({
+          model: state.settings.currentModel,
+          characterProfile: buildCharacterProfile(activeEvent.cast[0]),
+          memorySummary: state.memory.summary,
+          memoryFacts: state.memory.facts,
+          locationLabel: resolveLocationLabel(state),
+          eventTitle: activeEvent.title,
+          castName: activeEvent.cast[0],
+          transcript: state.event.transcript.map((message) => `${message.label}：${message.content}`),
+          playerInput:
+            intent === 'end_event' ? '请基于当前气氛，自然地把这一幕收尾。' : playerInput,
+          intent
+        }),
+        getCharsPerSecond: () => state.settings.streamCharsPerSecond,
+        onCharacter: (character) => {
+          state = appendStreamingReply(state, character);
+          rerender();
+        }
+      });
 
       const streamingResult = stripEventEndMarker(state.event.streamingReply);
       state = {
@@ -152,11 +160,26 @@ export const bindUi = (root: HTMLDivElement): void => {
       rerender();
     });
 
+    root.querySelectorAll<HTMLButtonElement>('[data-action="toggle-settings"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state = toggleSettingsPanel(state);
+        rerender();
+      });
+    });
+
     root.querySelectorAll<HTMLButtonElement>('[data-model-id]').forEach((button) => {
       button.addEventListener('click', () => {
         state = setCurrentModel(state, button.dataset.modelId as string);
+        saveStoredSettings(state.settings);
         rerender();
       });
+    });
+
+    root.querySelector<HTMLInputElement>('[data-setting="stream-speed"]')?.addEventListener('input', (event) => {
+      const nextValue = Number((event.currentTarget as HTMLInputElement).value);
+      state = setStreamCharsPerSecond(state, nextValue);
+      saveStoredSettings(state.settings);
+      rerender();
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="back"]')?.addEventListener('click', () => {
