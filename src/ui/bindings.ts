@@ -1,23 +1,27 @@
 import { worldData } from '../data/world';
-import { requestStoryReplyStream, stripEventEndMarker } from '../logic/chatClient';
-import { appendStreamWithRateLimit } from '../logic/streamDisplay';
-import { loadStoredSettings, saveStoredSettings } from '../settings/storage';
-import { compressMemory } from '../logic/memory';
+import { requestEventTimeSettlement, requestGeneratedSceneEvent, requestStoryReplyStream, stripEventEndMarker } from '../logic/chatClient';
+import { buildPlayerFacingSceneSummary, summarizeResolvedEvent, compressMemory } from '../logic/memory';
 import {
+  appendActiveEventFacts,
+  advanceClockByMinutes,
   appendStreamingReply,
   appendTranscriptMessage,
+  cacheSceneEvent,
   createInitialState,
   endEvent,
   enterRegion,
-  failStreamingReply,
   enterScene,
+  failStreamingReply,
   finishStreamingReply,
+  invalidateSceneEventCache,
+  isSceneEventReusable,
   markEventReadyToEnd,
+  recordWorldAdvance,
+  selectSceneEventSeed,
+  setSceneSummary,
   setCurrentModel,
-  setStreamCharsPerSecond,
   startEvent,
   startStreamingReply,
-  toggleSettingsPanel,
   toggleModelMenu,
   updateMemory,
   type GameState
@@ -30,7 +34,11 @@ const resolveLocationLabel = (state: GameState): string => {
   return `${region?.name ?? '城市'}${scene ? ` / ${scene.name}` : ''}`;
 };
 
-const buildCharacterProfile = (name: string): string => {
+const buildCharacterProfile = (name?: string): string => {
+  if (!name) {
+    return '当前场景没有固定对话角色。请以旁白和环境反馈为主，允许玩家等待、观察、发消息或自言自语，不要突然生成一个无关角色强行接话。';
+  }
+
   const character = worldData.characters.find((item) => item.name === name || item.id === name);
 
   if (!character) {
@@ -50,18 +58,73 @@ const buildCharacterProfile = (name: string): string => {
 };
 
 export const bindUi = (root: HTMLDivElement): void => {
-  let state: GameState = createInitialState(loadStoredSettings());
+  let state: GameState = createInitialState();
+
+  const rerender = () => {
+    renderApp(root, state);
+    const history = root.querySelector<HTMLElement>('[data-chat-history]');
+    if (history) {
+      history.scrollTop = history.scrollHeight;
+    }
+    bindEvents();
+  };
+
+  const openSceneEvent = async (sceneId: string) => {
+    const scene = worldData.scenes.find((item) => item.id === sceneId);
+
+    if (!scene) {
+      return;
+    }
+
+    state = enterScene(state, sceneId);
+    rerender();
+
+    if (isSceneEventReusable(state, sceneId)) {
+      const cachedEvent = state.event.sceneEventCache[sceneId];
+
+      if (cachedEvent) {
+        state = startEvent(state, cachedEvent);
+        rerender();
+        return;
+      }
+    }
+
+    if (state.event.sceneEventCache[sceneId]) {
+      state = invalidateSceneEventCache(state, sceneId);
+    }
+
+    const locationLabel = resolveLocationLabel(state);
+    const planningScene = {
+      ...scene,
+      eventSeed: selectSceneEventSeed(state, scene)
+    };
+    const plannedEvent = await requestGeneratedSceneEvent({
+      model: state.settings.currentModel,
+      scene: planningScene,
+      locationLabel,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot,
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      worldRevision: state.world.revision
+    });
+
+    state = cacheSceneEvent(state, plannedEvent);
+    const cachedEvent = state.event.sceneEventCache[sceneId];
+
+    if (cachedEvent) {
+      state = startEvent(state, cachedEvent);
+    }
+
+    rerender();
+  };
 
   const runEventTurn = async (playerInput: string, intent: 'continue' | 'end_event') => {
-    if (!state.event.activeEventId || state.ui.isSending) {
+    if (!state.event.activeEvent || state.ui.isSending) {
       return;
     }
 
-    const activeEvent = worldData.events.find((item) => item.id === state.event.activeEventId);
-
-    if (!activeEvent) {
-      return;
-    }
+    const activeEvent = state.event.activeEvent;
 
     state = appendTranscriptMessage(state, {
       role: 'player',
@@ -72,26 +135,25 @@ export const bindUi = (root: HTMLDivElement): void => {
     rerender();
 
     try {
-      await appendStreamWithRateLimit({
-        source: requestStoryReplyStream({
-          model: state.settings.currentModel,
-          characterProfile: buildCharacterProfile(activeEvent.cast[0]),
-          memorySummary: state.memory.summary,
-          memoryFacts: state.memory.facts,
-          locationLabel: resolveLocationLabel(state),
-          eventTitle: activeEvent.title,
-          castName: activeEvent.cast[0],
-          transcript: state.event.transcript.map((message) => `${message.label}：${message.content}`),
-          playerInput:
-            intent === 'end_event' ? '请基于当前气氛，自然地把这一幕收尾。' : playerInput,
-          intent
-        }),
-        getCharsPerSecond: () => state.settings.streamCharsPerSecond,
-        onCharacter: (character) => {
-          state = appendStreamingReply(state, character);
-          rerender();
-        }
-      });
+      for await (const chunk of requestStoryReplyStream({
+        model: state.settings.currentModel,
+        characterProfile: buildCharacterProfile(activeEvent.cast[0]),
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        locationLabel: activeEvent.locationLabel,
+        eventTitle: activeEvent.title,
+        castName: activeEvent.cast[0] || '旁白',
+        eventPhase: activeEvent.currentPhase,
+        phaseGoal: activeEvent.buildUpGoal,
+        overlimitTrigger: activeEvent.overlimitTrigger,
+        suspenseThreads: activeEvent.suspenseThreads,
+        transcript: state.event.transcript.map((message) => `${message.label}：${message.content}`),
+        playerInput: intent === 'end_event' ? '请基于当前气氛，自然地把这一幕收尾。' : playerInput,
+        intent
+      })) {
+        state = appendStreamingReply(state, chunk);
+        rerender();
+      }
 
       const streamingResult = stripEventEndMarker(state.event.streamingReply);
       state = {
@@ -107,10 +169,43 @@ export const bindUi = (root: HTMLDivElement): void => {
       }
 
       state = finishStreamingReply(state);
+      state = appendActiveEventFacts(state, [
+        `玩家在${activeEvent.locationLabel}推进了${activeEvent.title}`,
+        playerInput ? `玩家本轮提到：${playerInput}` : '玩家选择自然结束这段事件'
+      ]);
 
-      if (state.event.readyToEnd) {
+      if (state.event.readyToEnd && state.event.activeEvent) {
+        const transcriptForMemory = state.event.transcript.map((message) => `${message.label}：${message.content}`);
+        const resolvedEvent = state.event.activeEvent;
+        const resolvedSceneId = resolvedEvent.sceneId;
+        const resolvedTitle = state.event.activeEvent.title;
+        const timeSettlement = await requestEventTimeSettlement({
+          model: state.settings.currentModel,
+          startTimeLabel: state.clock.label,
+          locationLabel: resolvedEvent.locationLabel,
+          eventTitle: resolvedTitle,
+          transcript: transcriptForMemory,
+          eventFacts: resolvedEvent.facts
+        });
+        const memoryResult = summarizeResolvedEvent({
+          event: resolvedEvent,
+          transcript: transcriptForMemory,
+          memoryFacts: state.memory.facts
+        });
+        const playerSceneSummary = buildPlayerFacingSceneSummary({
+          event: resolvedEvent,
+          transcript: transcriptForMemory,
+          settlementSummary: timeSettlement.summary
+        });
+
+        state = advanceClockByMinutes(state, timeSettlement.minutesElapsed);
+        state = updateMemory(state, memoryResult);
+        state = setSceneSummary(state, resolvedSceneId, playerSceneSummary);
+        state = recordWorldAdvance(
+          state,
+          `事件【${resolvedTitle}】已经自然收束，时间推进了 ${timeSettlement.minutesElapsed} 分钟。${timeSettlement.summary}`
+        );
         state = endEvent(state);
-        state = appendTranscriptMessage(state, { role: 'system', label: '系统', content: '这段对话暂时告一段落。' });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
@@ -125,7 +220,7 @@ export const bindUi = (root: HTMLDivElement): void => {
       const input = root.querySelector<HTMLTextAreaElement>('textarea');
       const value = input?.value.trim();
 
-      if (!input || !value || !state.event.activeEventId || state.ui.isSending) {
+      if (!input || !value || !state.event.activeEvent || state.ui.isSending) {
         return;
       }
 
@@ -142,16 +237,7 @@ export const bindUi = (root: HTMLDivElement): void => {
 
     root.querySelectorAll<HTMLButtonElement>('[data-scene-id]').forEach((button) => {
       button.addEventListener('click', () => {
-        const sceneId = button.dataset.sceneId as string;
-        const scene = worldData.scenes.find((item) => item.id === sceneId);
-
-        state = enterScene(state, sceneId);
-
-        if (scene?.eventIds[0]) {
-          state = startEvent(state, scene.eventIds[0]);
-        }
-
-        rerender();
+        void openSceneEvent(button.dataset.sceneId as string);
       });
     });
 
@@ -160,31 +246,17 @@ export const bindUi = (root: HTMLDivElement): void => {
       rerender();
     });
 
-    root.querySelectorAll<HTMLButtonElement>('[data-action="toggle-settings"]').forEach((button) => {
-      button.addEventListener('click', () => {
-        state = toggleSettingsPanel(state);
-        rerender();
-      });
-    });
-
     root.querySelectorAll<HTMLButtonElement>('[data-model-id]').forEach((button) => {
       button.addEventListener('click', () => {
         state = setCurrentModel(state, button.dataset.modelId as string);
-        saveStoredSettings(state.settings);
         rerender();
       });
-    });
-
-    root.querySelector<HTMLInputElement>('[data-setting="stream-speed"]')?.addEventListener('input', (event) => {
-      const nextValue = Number((event.currentTarget as HTMLInputElement).value);
-      state = setStreamCharsPerSecond(state, nextValue);
-      saveStoredSettings(state.settings);
-      rerender();
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="back"]')?.addEventListener('click', () => {
       if (state.ui.mode === 'event') {
-        state = endEvent(state);
+        void runEventTurn('', 'end_event');
+        return;
       } else if (state.navigation.currentSceneId) {
         state = {
           ...state,
@@ -226,16 +298,13 @@ export const bindUi = (root: HTMLDivElement): void => {
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="compress"]')?.addEventListener('click', () => {
-      const latestSummary = state.event.transcript[state.event.transcript.length - 1]?.content ?? state.memory.summary;
-      const activeEvent = state.event.activeEventId
-        ? worldData.events.find((item) => item.id === state.event.activeEventId)
-        : null;
-
+      const activeEvent = state.event.activeEvent;
+      const latestSummary = activeEvent?.resolutionDirection ?? state.memory.summary;
       const unlockedFacts = Array.from(
         new Set([
           ...state.memory.facts,
-          '你已经正式认识林澄',
-          ...(activeEvent ? [`你最近在${resolveLocationLabel(state)}和${activeEvent.cast[0]}有更深入的交流`] : [])
+          ...(activeEvent?.facts ?? []),
+          ...(activeEvent?.cast?.length ? [`你刚刚在${activeEvent.locationLabel}遇到了${activeEvent.cast.join('、')}`] : [])
         ])
       );
 
@@ -244,20 +313,11 @@ export const bindUi = (root: HTMLDivElement): void => {
         compressMemory({
           latestSummary,
           unlockedFacts,
-          currentGoal: activeEvent ? `继续确认${activeEvent.cast[0]}没有说出口的心事` : '找到下一个能拉近关系的地点'
+          currentGoal: activeEvent ? `继续观察${activeEvent.cast[0]}没有说出口的意图` : '找到下一个值得进入的地点'
         })
       );
       rerender();
     });
-  };
-
-  const rerender = () => {
-    renderApp(root, state);
-    const history = root.querySelector<HTMLElement>('[data-chat-history]');
-    if (history) {
-      history.scrollTop = history.scrollHeight;
-    }
-    bindEvents();
   };
 
   rerender();

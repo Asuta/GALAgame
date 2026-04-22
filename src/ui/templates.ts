@@ -39,73 +39,12 @@ export const createAppMarkup = (state: GameState): string => {
       `
       : '';
 
+  const visibleSceneSummary =
+    currentScene && state.ui.sceneSummary.sceneId === currentScene.id ? state.ui.sceneSummary.content : null;
+
   const emptyPrompt = activeEvent
-    ? activeEvent.intro
-    : currentScene?.description ?? state.memory.summary;
-
-  const mainContentMarkup = `
-    ${state.ui.isModelMenuOpen
-      ? `<div class="model-menu">
-          ${state.settings.availableModels
-            .map(
-              (model) =>
-                `<button class="model-option ${model === state.settings.currentModel ? 'is-active' : ''}" data-model-id="${model}">${model}</button>`
-            )
-            .join('')}
-        </div>`
-      : ''}
-    <article class="story-box" data-chat-history>
-      ${historyMarkup || `<div class="story-placeholder">${emptyPrompt}</div>`}
-      ${streamingMarkup}
-    </article>
-    <section class="memory-box">
-      <h3>记忆</h3>
-      <p>${state.memory.summary}</p>
-      <ul>
-        ${state.memory.facts.map((fact) => `<li>${fact}</li>`).join('')}
-      </ul>
-    </section>
-    <div class="choices">
-      ${currentRegion ? sceneButtons : regionButtons}
-    </div>
-    <div class="input-row">
-      <textarea placeholder="进入事件后，在这里输入你想说的话。回车发送，Shift+回车换行。" ${state.ui.mode === 'event' ? '' : 'disabled'}></textarea>
-      <div class="action-row">
-        <button data-action="compress">记忆压缩</button>
-        <button data-action="end-event" ${state.ui.mode === 'event' && !state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
-        <button data-action="back">离开地点</button>
-        <button data-action="send" ${state.ui.mode === 'event' && !state.ui.isSending ? '' : 'disabled'}>
-          ${state.ui.isSending ? '生成中' : '发送'}
-        </button>
-      </div>
-    </div>
-  `;
-
-  const settingsMarkup = `
-    <section class="settings-panel" data-testid="settings-panel">
-      <div class="settings-header">
-        <div>
-          <h3>设置</h3>
-          <p>调整当前剧情文字的显示速度，刷新页面后会保留。</p>
-        </div>
-      </div>
-      <label class="settings-field">
-        <span>文字显示速度</span>
-        <strong>${state.settings.streamCharsPerSecond} 字/秒</strong>
-      </label>
-      <input
-        class="settings-slider"
-        data-setting="stream-speed"
-        type="range"
-        min="1"
-        max="20"
-        step="1"
-        value="${state.settings.streamCharsPerSecond}"
-      />
-      <p class="settings-hint">数值越低，模型文字显示得越慢；最低支持 1 字/秒。</p>
-      <button class="settings-close" data-action="toggle-settings">返回游戏</button>
-    </section>
-  `;
+    ? `【${activeEvent.title}】\n${activeEvent.openingState}`
+    : visibleSceneSummary ?? currentScene?.description ?? '选择一个区域，看看接下来会发生什么。';
 
   return `
     <div class="phone-frame">
@@ -122,12 +61,39 @@ export const createAppMarkup = (state: GameState): string => {
             <span>${currentScene ? ` / ${currentScene.name}` : ''}</span>
           </div>
           <div class="status-tools">
-            <button class="model-toggle" data-action="toggle-settings">设置</button>
+            <span class="time-pill">${state.clock.label}</span>
             <button class="model-toggle" data-action="toggle-model-menu">${state.settings.currentModel}</button>
             <span class="mode-pill">${state.ui.mode === 'event' ? '事件中' : '探索中'}</span>
           </div>
         </header>
-        ${state.ui.isSettingsOpen ? settingsMarkup : mainContentMarkup}
+        ${state.ui.isModelMenuOpen
+          ? `<div class="model-menu">
+              ${state.settings.availableModels
+                .map(
+                  (model) =>
+                    `<button class="model-option ${model === state.settings.currentModel ? 'is-active' : ''}" data-model-id="${model}">${model}</button>`
+                )
+                .join('')}
+            </div>`
+          : ''}
+        <article class="story-box" data-chat-history>
+          ${historyMarkup || `<div class="story-placeholder">${emptyPrompt}</div>`}
+          ${streamingMarkup}
+        </article>
+        <div class="choices">
+          ${currentRegion ? sceneButtons : regionButtons}
+        </div>
+        <div class="input-row">
+          <textarea placeholder="进入事件后，在这里输入你想说的话。回车发送，Shift+回车换行。" ${state.ui.mode === 'event' ? '' : 'disabled'}></textarea>
+          <div class="action-row">
+            <button data-action="compress">整理线索</button>
+            <button data-action="end-event" ${state.ui.mode === 'event' && !state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
+            <button data-action="back">离开地点</button>
+            <button data-action="send" ${state.ui.mode === 'event' && !state.ui.isSending ? '' : 'disabled'}>
+              ${state.ui.isSending ? '生成中' : '发送'}
+            </button>
+          </div>
+        </div>
       </section>
     </div>
   `;

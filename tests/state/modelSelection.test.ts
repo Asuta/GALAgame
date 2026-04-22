@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { createInitialState, setCurrentModel, toggleModelMenu } from '../../src/state/store';
 
 describe('model selection state', () => {
+  it('uses deepseek-chat as the default model', () => {
+    const state = createInitialState();
+
+    expect(state.settings.currentModel).toBe('deepseek-chat');
+  });
+
   it('toggles model menu and updates current model immediately', () => {
     let state = createInitialState();
 

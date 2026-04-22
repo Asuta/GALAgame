@@ -213,6 +213,37 @@ body {
   font-size: 12px;
 }
 
+.time-pill,
+.phase-pill,
+.thread-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
+.event-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.event-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.event-card-header,
+.thread-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .memory-box {
   padding: 10px 12px;
   border-radius: 12px;

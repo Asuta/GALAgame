@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { buildChatRequest, extractAssistantReply, parseSseDelta, stripEventEndMarker } from '../../src/logic/chatClient';
+import {
+  buildChatRequest,
+  buildEventPlanRequest,
+  buildEventTimeSettlementRequest,
+  buildFallbackSceneEvent,
+  buildFallbackTimeSettlement,
+  extractAssistantReply,
+  parseEventTimeSettlement,
+  parsePlannedSceneEvent,
+  parseSseDelta,
+  stripEventEndMarker
+} from '../../src/logic/chatClient';
+import { worldData } from '../../src/data/world';
 
 describe('chatClient helpers', () => {
   it('builds an OpenAI-compatible chat payload', () => {
@@ -95,5 +107,97 @@ describe('chatClient helpers', () => {
     expect(payload.messages[1].content).toContain('玩家准备结束当前事件');
     expect(payload.messages[1].content).toContain('像小说收束一幕');
     expect(payload.messages[1].content).toContain('[EVENT_END]');
+  });
+
+  it('builds a planner request that includes time, scene mood, and overlimit trigger guidance', () => {
+    const payload = buildEventPlanRequest({
+      model: 'gpt-4.1-mini',
+      systemPrompt: '你是事件编剧。',
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      timeLabel: '傍晚 18:00',
+      timeSlot: 'evening',
+      memorySummary: '你刚开始在这座城市里探索。',
+      memoryFacts: []
+    });
+
+    expect(payload.messages[1].content).toContain('傍晚 18:00');
+    expect(payload.messages[1].content).toContain('超限触发');
+    expect(payload.messages[1].content).toContain('学校 / 教室');
+  });
+
+  it('parses a JSON planned event response into a runtime event instance', () => {
+    const planned = parsePlannedSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      timeLabel: '傍晚 18:00',
+      timeSlot: 'evening',
+      responseText: JSON.stringify({
+        title: '放学后的空教室',
+        cast: ['林澄'],
+        premise: '放学后的教室里，她像是在等一个不该来的人。',
+        openingState: '她没有立刻看你，只是望着窗外。',
+        buildUpGoal: '让玩家感觉到她今晚有心事。',
+        overlimitTrigger: '对话进行两轮后，门外突然传来急促脚步声。',
+        resolutionDirection: '这一幕先收在心事被打断的悬念里。',
+        suspenseThreads: ['她在等谁', '门外的人是谁']
+      })
+    });
+
+    expect(planned.title).toBe('放学后的空教室');
+    expect(planned.currentPhase).toBe('opening');
+    expect(planned.suspenseThreads).toContain('门外的人是谁');
+  });
+
+  it('builds a deterministic fallback event when planner output is missing', () => {
+    const planned = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'ward')!,
+      locationLabel: '医院 / 病房',
+      timeLabel: '深夜 01:00',
+      timeSlot: 'late_night',
+      memorySummary: '你已经认识林澄。',
+      memoryFacts: ['她最近经常去医院']
+    });
+
+    expect(planned.sceneId).toBe('ward');
+    expect(planned.overlimitTrigger.length).toBeGreaterThan(0);
+    expect(planned.snapshot.timeSlot).toBe('late_night');
+  });
+
+  it('builds a settlement request that asks for elapsed minutes after an event', () => {
+    const payload = buildEventTimeSettlementRequest({
+      model: 'gpt-4.1-mini',
+      systemPrompt: '你是时间结算器。',
+      startTimeLabel: '傍晚 18:00',
+      locationLabel: '学校 / 教室',
+      eventTitle: '放学后的空教室',
+      transcript: ['你：今天怎么还没回家？', '林澄：我想再坐一会儿。'],
+      eventFacts: ['剧情阶段进入build_up', '玩家在学校 / 教室推进了放学后的空教室']
+    });
+
+    expect(payload.messages[1].content).toContain('傍晚 18:00');
+    expect(payload.messages[1].content).toContain('耗时分钟');
+    expect(payload.messages[1].content).toContain('放学后的空教室');
+  });
+
+  it('parses settled event minutes from json', () => {
+    const settlement = parseEventTimeSettlement('{"minutesElapsed":45,"summary":"这次交流拉长到了晚饭前后。"}');
+
+    expect(settlement.minutesElapsed).toBe(45);
+    expect(settlement.summary).toContain('晚饭前后');
+  });
+
+  it('falls back to a longer duration when transcript is dense and event phases advanced', () => {
+    const settlement = buildFallbackTimeSettlement({
+      transcript: [
+        '你：今天怎么还没回家？',
+        '林澄：我还想再坐一会儿。',
+        '你：是不是发生什么事了？',
+        '旁白：门外忽然传来一阵急促脚步声。'
+      ],
+      eventFacts: ['剧情阶段进入build_up', '剧情阶段进入overlimit', '玩家在学校 / 教室推进了放学后的空教室']
+    });
+
+    expect(settlement.minutesElapsed).toBeGreaterThanOrEqual(45);
   });
 });

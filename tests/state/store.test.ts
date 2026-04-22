@@ -1,17 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import {
+  advanceClockByMinutes,
   appendStreamingReply,
+  cacheSceneEvent,
   createInitialState,
   endEvent,
+  findCharacterScene,
   enterRegion,
   enterScene,
   finishStreamingReply,
+  invalidateSceneEventCache,
+  isSceneEventReusable,
   markEventReadyToEnd,
-  setStreamCharsPerSecond,
+  recordWorldAdvance,
+  selectSceneEventSeed,
   startEvent,
-  startStreamingReply,
-  toggleSettingsPanel
+  startStreamingReply
 } from '../../src/state/store';
+import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
+import { worldData } from '../../src/data/world';
 
 describe('store transitions', () => {
   it('moves from world map to region scene to event and back', () => {
@@ -23,19 +30,39 @@ describe('store transitions', () => {
     state = enterScene(state, 'classroom');
     expect(state.navigation.currentSceneId).toBe('classroom');
 
-    state = startEvent(state, 'after-school-classroom');
-    expect(state.event.activeEventId).toBe('after-school-classroom');
+    const plannedEvent = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = cacheSceneEvent(state, plannedEvent);
+    state = startEvent(state, plannedEvent);
+    expect(state.event.activeEvent?.sceneId).toBe('classroom');
     expect(state.ui.mode).toBe('event');
 
     state = endEvent(state);
-    expect(state.event.activeEventId).toBeNull();
+    expect(state.event.activeEvent).toBeNull();
     expect(state.ui.mode).toBe('explore');
   });
 
   it('streams a reply into transcript when complete', () => {
     let state = createInitialState();
 
-    state = startEvent(state, 'after-school-classroom');
+    state = startEvent(
+      state,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      })
+    );
     state = startStreamingReply(state, '林澄');
     state = appendStreamingReply(state, '她');
     state = appendStreamingReply(state, '笑了');
@@ -53,22 +80,133 @@ describe('store transitions', () => {
 
   it('marks event as ready to end when model emits finish signal', () => {
     let state = createInitialState();
-    state = startEvent(state, 'after-school-classroom');
+    const plannedEvent = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = startEvent(state, plannedEvent);
     state = markEventReadyToEnd(state);
 
     expect(state.event.readyToEnd).toBe(true);
   });
 
-  it('toggles settings panel and updates stream speed limit', () => {
+  it('keeps ready-to-end state after finishing the final streamed reply', () => {
+    let state = createInitialState();
+    state = startEvent(
+      state,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      })
+    );
+    state = startStreamingReply(state, '林澄');
+    state = appendStreamingReply(state, '那今天就先到这里吧。');
+    state = markEventReadyToEnd(state);
+
+    state = finishStreamingReply(state);
+
+    expect(state.event.readyToEnd).toBe(true);
+  });
+
+  it('reuses a cached scene event in the same time slot when the world has not advanced', () => {
+    let state = createInitialState();
+    const plannedEvent = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = cacheSceneEvent(state, plannedEvent);
+
+    expect(isSceneEventReusable(state, 'classroom')).toBe(true);
+  });
+
+  it('keeps an earlier scene event reusable after generating another scene event in the same world state', () => {
+    let state = createInitialState();
+    const classroomEvent = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+    const hallwayEvent = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'hallway')!,
+      locationLabel: '学校 / 走廊',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = cacheSceneEvent(state, classroomEvent);
+    state = cacheSceneEvent(state, hallwayEvent);
+
+    expect(isSceneEventReusable(state, 'classroom')).toBe(true);
+    expect(isSceneEventReusable(state, 'hallway')).toBe(true);
+  });
+
+  it('invalidates a cached scene event after the world advances elsewhere', () => {
+    let state = createInitialState();
+    const plannedEvent = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = cacheSceneEvent(state, plannedEvent);
+    state = recordWorldAdvance(state, '医院那边触发了另一段新剧情');
+    state = invalidateSceneEventCache(state, 'classroom');
+
+    expect(isSceneEventReusable(state, 'classroom')).toBe(false);
+    expect(state.event.sceneEventCache.classroom?.status).toBe('stale');
+  });
+
+  it('falls back to a non-character scene seed when that character already occupies another location', () => {
+    let state = createInitialState();
+    const classroomEvent = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = cacheSceneEvent(state, classroomEvent);
+
+    expect(findCharacterScene(state, '林澄', 'cafe')).toBe('classroom');
+
+    const selectedSeed = selectSceneEventSeed(state, worldData.scenes.find((scene) => scene.id === 'cafe')!);
+
+    expect(selectedSeed.castIds).toEqual([]);
+    expect(selectedSeed.baseTitle).toContain('咖啡店');
+  });
+
+  it('advances the world clock by settled event minutes', () => {
     let state = createInitialState();
 
-    expect(state.ui.isSettingsOpen).toBe(false);
-    expect(state.settings.streamCharsPerSecond).toBe(8);
+    state = advanceClockByMinutes(state, 35);
 
-    state = toggleSettingsPanel(state);
-    expect(state.ui.isSettingsOpen).toBe(true);
-
-    state = setStreamCharsPerSecond(state, 1);
-    expect(state.settings.streamCharsPerSecond).toBe(1);
+    expect(state.clock.hour).toBe(18);
+    expect(state.clock.minute).toBe(35);
+    expect(state.clock.label).toBe('傍晚 18:35');
+    expect(state.clock.timeSlot).toBe('evening');
   });
 });

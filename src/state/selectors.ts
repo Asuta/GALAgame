@@ -7,5 +7,4 @@ export const getCurrentRegion = (state: GameState) =>
 export const getCurrentScene = (state: GameState) =>
   worldData.scenes.find((scene) => scene.id === state.navigation.currentSceneId) ?? null;
 
-export const getActiveEvent = (state: GameState) =>
-  worldData.events.find((storyEvent) => storyEvent.id === state.event.activeEventId) ?? null;
+export const getActiveEvent = (state: GameState) => state.event.activeEvent;
