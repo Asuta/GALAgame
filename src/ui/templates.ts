@@ -90,6 +90,57 @@ export const createAppMarkup = (state: GameState): string => {
   const streamSpeedHint =
     state.settings.streamCharsPerSecond <= 4 ? '慢' : state.settings.streamCharsPerSecond >= 12 ? '快' : '默认';
 
+  if (state.ui.currentPage === 'settings') {
+    return `
+      <div class="phone-frame phone-frame--settings">
+        <section class="settings-page" data-testid="settings-page">
+          <header class="settings-header">
+            <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
+            <div>
+              <p>设置</p>
+              <h1>游戏设置</h1>
+            </div>
+          </header>
+          <div class="settings-card">
+            <div class="settings-section-heading">
+              <strong>模型选择</strong>
+              <span>当前：${escapeHtml(state.settings.currentModel)}</span>
+            </div>
+            <div class="settings-option-list">
+              ${state.settings.availableModels
+                .map(
+                  (model) =>
+                    `<button class="model-option ${model === state.settings.currentModel ? 'is-active' : ''}" data-model-id="${escapeHtml(model)}">${escapeHtml(model)}</button>`
+                )
+                .join('')}
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="stream-speed-header">
+              <strong>流式输出速度</strong>
+              <span>${state.settings.streamCharsPerSecond} 字/秒 · ${streamSpeedHint}</span>
+            </div>
+            <input
+              class="stream-speed-slider"
+              data-stream-speed-slider
+              type="range"
+              min="1"
+              max="20"
+              step="1"
+              value="${state.settings.streamCharsPerSecond}"
+              aria-label="流式输出速度"
+            />
+            <div class="stream-speed-scale">
+              <span>慢</span>
+              <span>每秒</span>
+              <span>快</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
   return `
     <div class="phone-frame">
       <section class="visual-panel" data-testid="visual-panel">
@@ -124,20 +175,10 @@ export const createAppMarkup = (state: GameState): string => {
           </div>
           <div class="status-tools">
             <span class="time-pill">${escapeHtml(state.clock.label)}</span>
-            <button class="model-toggle" data-action="toggle-model-menu">${escapeHtml(state.settings.currentModel)}</button>
             <span class="mode-pill">${escapeHtml(visibleActiveEvent ? '事件中' : visiblePreparedEvent ? '待开场' : '探索中')}</span>
+            <span class="model-toggle">${escapeHtml(state.settings.currentModel)}</span>
           </div>
         </header>
-        ${state.ui.isModelMenuOpen
-          ? `<div class="model-menu">
-              ${state.settings.availableModels
-                .map(
-                  (model) =>
-                    `<button class="model-option ${model === state.settings.currentModel ? 'is-active' : ''}" data-model-id="${escapeHtml(model)}">${escapeHtml(model)}</button>`
-                )
-                .join('')}
-            </div>`
-          : ''}
         <article class="story-box" data-chat-history>
           ${historyMarkup || loadingPlaceholder || `<div class="story-placeholder">${escapeHtml(emptyPrompt)}</div>`}
           ${streamingMarkup}
@@ -147,30 +188,8 @@ export const createAppMarkup = (state: GameState): string => {
         </div>
         <div class="input-row">
           <textarea placeholder="输入你想说的话。第一次发送后正式进入事件；回车发送，Shift+回车换行。" ${visibleActiveEvent || visiblePreparedEvent ? '' : 'disabled'}></textarea>
-          ${state.ui.isStreamSpeedMenuOpen
-            ? `<div class="stream-speed-panel">
-                <div class="stream-speed-header">
-                  <strong>流式输出速度</strong>
-                  <span>${state.settings.streamCharsPerSecond} 字/秒 · ${streamSpeedHint}</span>
-                </div>
-                <input
-                  class="stream-speed-slider"
-                  data-stream-speed-slider
-                  type="range"
-                  min="1"
-                  max="20"
-                  step="1"
-                  value="${state.settings.streamCharsPerSecond}"
-                />
-                <div class="stream-speed-scale">
-                  <span>慢</span>
-                  <span>每秒</span>
-                  <span>快</span>
-                </div>
-              </div>`
-            : ''}
           <div class="action-row">
-            <button data-action="toggle-stream-speed">设置流式输出速度</button>
+            <button data-action="open-settings">设置</button>
             <button data-action="compress">整理线索</button>
             ${
               visibleActiveEvent

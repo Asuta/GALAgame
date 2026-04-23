@@ -13,6 +13,7 @@ export interface GameState {
     currentSceneId: string | null;
   };
   ui: {
+    currentPage: 'game' | 'settings';
     mode: Mode;
     isModelMenuOpen: boolean;
     isStreamSpeedMenuOpen: boolean;
@@ -136,6 +137,7 @@ export const createInitialState = (): GameState => ({
     currentSceneId: null
   },
   ui: {
+    currentPage: 'game',
     mode: 'explore',
     isModelMenuOpen: false,
     isStreamSpeedMenuOpen: false,
@@ -184,6 +186,7 @@ export const enterRegion = (state: GameState, regionId: string): GameState => ({
   },
   ui: {
     ...state.ui,
+    currentPage: 'game',
     mode: 'explore',
     isModelMenuOpen: false,
     isStreamSpeedMenuOpen: false,
@@ -487,6 +490,26 @@ export const setCurrentModel = (state: GameState, model: string): GameState => (
   },
   ui: {
     ...state.ui,
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false
+  }
+});
+
+export const openSettingsPage = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    currentPage: 'settings',
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false
+  }
+});
+
+export const closeSettingsPage = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    currentPage: 'game',
     isModelMenuOpen: false,
     isStreamSpeedMenuOpen: false
   }
