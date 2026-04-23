@@ -7,6 +7,24 @@ import { resolveVisualSelection } from '../../src/visual/assetCatalog';
 describe('resolveVisualSelection', () => {
   it('keeps the first art pack aligned with the intended region and character set', () => {
     expect(worldData.regions.map((region) => region.id)).toEqual(['school', 'hospital', 'mall', 'home']);
+    expect(worldData.scenes.map((scene) => scene.id)).toEqual([
+      'classroom',
+      'hallway',
+      'playground',
+      'rooftop',
+      'lobby',
+      'ward',
+      'hospital-hallway',
+      'vending-zone',
+      'atrium',
+      'cafe',
+      'cinema-gate',
+      'accessory-shop',
+      'living-room',
+      'bedroom',
+      'balcony',
+      'entryway'
+    ]);
     expect(worldData.characters.map((character) => character.id)).toEqual(['林澄', '周然']);
   });
 
@@ -33,6 +51,31 @@ describe('resolveVisualSelection', () => {
     });
   });
 
+  it('prefers scene backgrounds over region backgrounds while exploring a specific scene', () => {
+    let state = createInitialState();
+    state = enterRegion(state, 'school');
+    state = enterScene(state, 'playground');
+
+    expect(resolveVisualSelection(state)).toEqual({
+      mode: 'region',
+      background: '/assets/backgrounds/scene-playground-main.png',
+      character: null,
+      locationLabel: '学校'
+    });
+  });
+
+  it('switches the background when the current scene changes inside the same region', () => {
+    let state = createInitialState();
+    state = enterRegion(state, 'school');
+
+    const hallwayVisual = resolveVisualSelection(enterScene(state, 'hallway'));
+    const rooftopVisual = resolveVisualSelection(enterScene(state, 'rooftop'));
+
+    expect(hallwayVisual.background).toBe('/assets/backgrounds/scene-hallway-main.png');
+    expect(rooftopVisual.background).toBe('/assets/backgrounds/scene-rooftop-main.png');
+    expect(hallwayVisual.background).not.toBe(rooftopVisual.background);
+  });
+
   it('returns the active character portrait during a classroom event', () => {
     let state = createInitialState();
     state = enterRegion(state, 'school');
@@ -51,7 +94,7 @@ describe('resolveVisualSelection', () => {
 
     expect(resolveVisualSelection(state)).toEqual({
       mode: 'event',
-      background: '/assets/backgrounds/region-school-main.png',
+      background: '/assets/backgrounds/scene-classroom-main.png',
       character: '/assets/characters/lin-cheng-half-body.png',
       locationLabel: '学校 / 教室'
     });
@@ -84,7 +127,7 @@ describe('resolveVisualSelection', () => {
 
       expect(resolveVisualSelection(state)).toEqual({
         mode: 'event',
-        background: '/assets/backgrounds/region-school-main.png',
+        background: '/assets/backgrounds/scene-classroom-main.png',
         character: '/assets/characters/lin-cheng-half-body.png',
         locationLabel: '学校 / 教室'
       });
