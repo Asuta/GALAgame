@@ -5,6 +5,7 @@ import {
   cacheSceneEvent,
   createInitialState,
   endEvent,
+  finishSceneGeneration,
   findCharacterScene,
   enterRegion,
   enterScene,
@@ -14,6 +15,8 @@ import {
   markEventReadyToEnd,
   recordWorldAdvance,
   selectSceneEventSeed,
+  setSceneGenerationError,
+  startSceneGeneration,
   startEvent,
   startStreamingReply
 } from '../../src/state/store';
@@ -157,6 +160,33 @@ describe('store transitions', () => {
 
     expect(isSceneEventReusable(state, 'classroom')).toBe(true);
     expect(isSceneEventReusable(state, 'hallway')).toBe(true);
+  });
+
+  it('tracks scene generation state per scene instead of globally locking all scenes', () => {
+    let state = createInitialState();
+
+    state = startSceneGeneration(state, 'classroom');
+    state = startSceneGeneration(state, 'hallway');
+
+    expect(state.ui.generatingSceneIds).toContain('classroom');
+    expect(state.ui.generatingSceneIds).toContain('hallway');
+
+    state = finishSceneGeneration(state, 'classroom');
+
+    expect(state.ui.generatingSceneIds).not.toContain('classroom');
+    expect(state.ui.generatingSceneIds).toContain('hallway');
+  });
+
+  it('stores generation errors per scene and clears them when retrying that scene', () => {
+    let state = createInitialState();
+
+    state = setSceneGenerationError(state, 'classroom', '模型请求失败：401');
+    expect(state.ui.sceneGenerationErrors.classroom).toBe('模型请求失败：401');
+
+    state = startSceneGeneration(state, 'classroom');
+
+    expect(state.ui.sceneGenerationErrors.classroom).toBeUndefined();
+    expect(state.ui.generatingSceneIds).toContain('classroom');
   });
 
   it('invalidates a cached scene event after the world advances elsewhere', () => {

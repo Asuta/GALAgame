@@ -1,5 +1,4 @@
 import type { EventPhase, GeneratedEvent, Scene, TimeSlot } from '../data/types';
-import { buildMockReply } from './dialogue';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -106,29 +105,6 @@ const extractJsonObject = (text: string): string | null => {
   }
 
   return text.slice(start, end + 1);
-};
-
-const buildLocalAssistantReply = ({
-  eventTitle,
-  locationLabel,
-  castName,
-  playerInput,
-  intent
-}: Pick<BuildChatRequestInput, 'eventTitle' | 'locationLabel' | 'castName' | 'playerInput' | 'intent'>): string => {
-  if (intent === 'end_event') {
-    return `旁白：${locationLabel}里的气氛慢慢落回安静。\n${castName || '旁白'}：那今天就先到这里吧。[EVENT_END]`;
-  }
-
-  if (!castName || castName === '旁白') {
-    return `旁白：${locationLabel}里没有新的熟人出现，空气里只剩下这一刻的细微动静。\n旁白：你刚才选择了“${playerInput}”，周围的气氛因此轻轻偏移了一点，像是在等你决定接下来要不要继续停留。`;
-  }
-
-  return buildMockReply({
-    eventTitle,
-    locationLabel,
-    castName,
-    playerInput
-  });
 };
 
 const clampMinutes = (minutes: number): number => Math.max(10, Math.min(180, Math.round(minutes)));
@@ -469,188 +445,161 @@ export const getChatRuntimeConfig = (): ChatRuntimeConfig => {
 export const requestStoryReply = async (
   input: Omit<BuildChatRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
 ): Promise<string> => {
-  try {
-    const config = getChatRuntimeConfig();
-    const payload = buildChatRequest({
-      ...input,
-      model: input.model ?? config.model,
-      systemPrompt:
-        input.systemPrompt ??
-        '你是一款现代恋爱向文字冒险游戏的叙事主持人与角色扮演者。保持中文输出，维持细腻、克制、暧昧的现代校园恋爱气质。'
-    });
+  const config = getChatRuntimeConfig();
+  const payload = buildChatRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt:
+      input.systemPrompt ??
+      '你是一款现代恋爱向文字冒险游戏的叙事主持人与角色扮演者。保持中文输出，维持细腻、克制、暧昧的现代校园恋爱气质。'
+  });
 
-    const response = await fetch(config.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify(payload)
-    });
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
 
-    if (!response.ok) {
-      throw new Error(`模型请求失败：${response.status}`);
-    }
-
-    const data = (await response.json()) as ChatCompletionResponse;
-    return extractAssistantReply(data);
-  } catch {
-    return buildLocalAssistantReply(input);
+  if (!response.ok) {
+    throw new Error(`模型请求失败：${response.status}`);
   }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  return extractAssistantReply(data);
 };
 
 export const requestGeneratedSceneEvent = async (
   input: Omit<BuildEventPlanRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string; worldRevision?: number }
 ): Promise<GeneratedEvent> => {
-  try {
-    const config = getChatRuntimeConfig();
-    const payload = buildEventPlanRequest({
-      ...input,
-      model: input.model ?? config.model,
-      systemPrompt:
-        input.systemPrompt ??
-        '你是恋爱文字冒险游戏的事件编剧，请为进入场景时生成一段带骨架但可自由发挥的剧情事件。'
-    });
+  const config = getChatRuntimeConfig();
+  const payload = buildEventPlanRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt:
+      input.systemPrompt ??
+      '你是恋爱文字冒险游戏的事件编剧，请为进入场景时生成一段带骨架但可自由发挥的剧情事件。'
+  });
 
-    const response = await fetch(config.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify(payload)
-    });
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
 
-    if (!response.ok) {
-      throw new Error(`模型请求失败：${response.status}`);
-    }
-
-    const data = (await response.json()) as ChatCompletionResponse;
-    const text = extractAssistantReply(data);
-
-    return parsePlannedSceneEvent({
-      scene: input.scene,
-      locationLabel: input.locationLabel,
-      timeLabel: input.timeLabel,
-      timeSlot: input.timeSlot,
-      responseText: text,
-      worldRevision: input.worldRevision
-    });
-  } catch {
-    return buildFallbackSceneEvent({
-      scene: input.scene,
-      locationLabel: input.locationLabel,
-      timeLabel: input.timeLabel,
-      timeSlot: input.timeSlot,
-      memorySummary: input.memorySummary,
-      memoryFacts: input.memoryFacts,
-      worldRevision: input.worldRevision
-    });
+  if (!response.ok) {
+    throw new Error(`模型请求失败：${response.status}`);
   }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  const text = extractAssistantReply(data);
+
+  return parsePlannedSceneEvent({
+    scene: input.scene,
+    locationLabel: input.locationLabel,
+    timeLabel: input.timeLabel,
+    timeSlot: input.timeSlot,
+    responseText: text,
+    worldRevision: input.worldRevision
+  });
 };
 
 export const requestEventTimeSettlement = async (
   input: Omit<BuildEventTimeSettlementRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
 ): Promise<EventTimeSettlement> => {
-  try {
-    const config = getChatRuntimeConfig();
-    const payload = buildEventTimeSettlementRequest({
-      ...input,
-      model: input.model ?? config.model,
-      systemPrompt: input.systemPrompt ?? '你是恋爱剧情游戏的时间结算器。'
-    });
+  const config = getChatRuntimeConfig();
+  const payload = buildEventTimeSettlementRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是恋爱剧情游戏的时间结算器。'
+  });
 
-    const response = await fetch(config.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify(payload)
-    });
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
 
-    if (!response.ok) {
-      throw new Error(`模型请求失败：${response.status}`);
-    }
-
-    const data = (await response.json()) as ChatCompletionResponse;
-    const text = extractAssistantReply(data);
-    return parseEventTimeSettlement(text);
-  } catch {
-    return buildFallbackTimeSettlement({
-      transcript: input.transcript,
-      eventFacts: input.eventFacts
-    });
+  if (!response.ok) {
+    throw new Error(`模型请求失败：${response.status}`);
   }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  const text = extractAssistantReply(data);
+  return parseEventTimeSettlement(text);
 };
 
 export async function* requestStoryReplyStream(
   input: Omit<BuildChatRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
 ): AsyncGenerator<string> {
-  try {
-    const config = getChatRuntimeConfig();
-    const payload: ChatRequestPayload = {
-      ...buildChatRequest({
-        ...input,
-        model: input.model ?? config.model,
-        systemPrompt:
-          input.systemPrompt ??
-          '你是一款现代恋爱向文字冒险游戏的叙事主持人与角色扮演者。保持中文输出，维持细腻、克制、暧昧的现代校园恋爱气质。'
-      }),
-      stream: true
-    };
+  const config = getChatRuntimeConfig();
+  const payload: ChatRequestPayload = {
+    ...buildChatRequest({
+      ...input,
+      model: input.model ?? config.model,
+      systemPrompt:
+        input.systemPrompt ??
+        '你是一款现代恋爱向文字冒险游戏的叙事主持人与角色扮演者。保持中文输出，维持细腻、克制、暧昧的现代校园恋爱气质。'
+    }),
+    stream: true
+  };
 
-    const response = await fetch(config.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify(payload)
-    });
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
 
-    if (!response.ok) {
-      throw new Error(`模型请求失败：${response.status}`);
+  if (!response.ok) {
+    throw new Error(`模型请求失败：${response.status}`);
+  }
+
+  if (!response.body) {
+    throw new Error('模型接口没有返回流式响应。');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
     }
 
-    if (!response.body) {
-      throw new Error('模型接口没有返回流式响应。');
-    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? '';
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() ?? '';
-
-      for (const line of lines) {
-        const delta = parseSseDelta(line);
-
-        if (delta) {
-          yield delta;
-        }
-      }
-    }
-
-    buffer += decoder.decode();
-
-    for (const line of buffer.split(/\r?\n/)) {
+    for (const line of lines) {
       const delta = parseSseDelta(line);
 
       if (delta) {
         yield delta;
       }
     }
-  } catch {
-    yield buildLocalAssistantReply(input);
+  }
+
+  buffer += decoder.decode();
+
+  for (const line of buffer.split(/\r?\n/)) {
+    const delta = parseSseDelta(line);
+
+    if (delta) {
+      yield delta;
+    }
   }
 }
