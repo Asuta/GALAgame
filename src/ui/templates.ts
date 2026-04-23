@@ -136,6 +136,13 @@ export const createAppMarkup = (state: GameState): string => {
               <span>快</span>
             </div>
           </div>
+          <div class="settings-card">
+            <div class="settings-section-heading">
+              <strong>线索整理</strong>
+              <span>压缩当前记忆</span>
+            </div>
+            <button class="settings-action-button" data-action="compress">整理线索</button>
+          </div>
         </section>
       </div>
     `;
@@ -190,7 +197,6 @@ export const createAppMarkup = (state: GameState): string => {
           <textarea placeholder="输入你想说的话。第一次发送后正式进入事件；回车发送，Shift+回车换行。" ${visibleActiveEvent || visiblePreparedEvent ? '' : 'disabled'}></textarea>
           <div class="action-row">
             <button data-action="open-settings">设置</button>
-            <button data-action="compress">整理线索</button>
             ${
               visibleActiveEvent
                 ? `<button data-action="end-event" ${!state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>`

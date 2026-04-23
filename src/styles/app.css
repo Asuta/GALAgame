@@ -137,17 +137,6 @@ body {
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.18);
 }
 
-.dialogue-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: url('/assets/ui/dialogue-panel-texture.png') center/320px 320px repeat;
-  opacity: 0.08;
-  mix-blend-mode: screen;
-  pointer-events: none;
-}
-
 .dialogue-panel > * {
   position: relative;
   z-index: 1;
@@ -377,11 +366,7 @@ body {
   gap: 16px;
   padding: 18px;
   border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(42, 34, 74, 0.9), rgba(18, 15, 31, 0.96)),
-    url('/assets/ui/dialogue-panel-texture.png');
-  background-position: center;
-  background-size: cover, 280px 280px;
+  background: linear-gradient(180deg, rgba(42, 34, 74, 0.94), rgba(18, 15, 31, 0.98));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
@@ -440,6 +425,17 @@ body {
 .settings-option-list {
   display: grid;
   gap: 8px;
+}
+
+.settings-action-button {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #8a74ff;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .mode-pill {

@@ -22,6 +22,7 @@ describe('renderApp', () => {
     expect(document.body.textContent).toContain('傍晚 18:00');
     expect(document.querySelector('[data-action="open-settings"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain('设置流式输出速度');
+    expect(document.querySelector('[data-action="compress"]')).toBeNull();
   });
 
   it('renders chat history entries with speaker labels', () => {
@@ -239,6 +240,8 @@ describe('renderApp', () => {
 
     expect(document.body.textContent).toContain('流式输出速度');
     expect(document.body.textContent).toContain('每秒');
+    expect(document.body.textContent).toContain('整理线索');
+    expect(document.querySelector('[data-action="compress"]')).not.toBeNull();
     expect(document.querySelector('[data-action="back-to-game"]')).not.toBeNull();
     expect(document.querySelector('[data-stream-speed-slider]')).not.toBeNull();
   });
