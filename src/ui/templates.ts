@@ -35,6 +35,8 @@ export const createAppMarkup = (state: GameState): string => {
         )
         .join('')
     : '';
+  const shouldHideSceneButtons = !!visibleActiveEvent;
+  const choiceButtons = currentRegion ? (shouldHideSceneButtons ? '' : sceneButtons) : regionButtons;
 
   const shouldShowTranscript = !activeEvent || !!visibleActiveEvent;
 
@@ -191,7 +193,7 @@ export const createAppMarkup = (state: GameState): string => {
           ${streamingMarkup}
         </article>
         <div class="choices">
-          ${currentRegion ? sceneButtons : regionButtons}
+          ${choiceButtons}
         </div>
         <div class="input-row">
           <textarea placeholder="输入你想说的话。第一次发送后正式进入事件；回车发送，Shift+回车换行。" ${visibleActiveEvent || visiblePreparedEvent ? '' : 'disabled'}></textarea>
