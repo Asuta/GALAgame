@@ -148,6 +148,7 @@ describe('renderApp', () => {
 
     expect(document.querySelector('[data-action="end-event"]')).not.toBeNull();
     expect(document.querySelector('[data-action="back"]')).toBeNull();
+    expect(document.querySelectorAll('[data-scene-id]')).toHaveLength(0);
   });
 
   it('shows only the leave-location action while exploring', () => {
