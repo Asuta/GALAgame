@@ -20,6 +20,7 @@ describe('renderApp', () => {
     expect(characterImage).toBeNull();
     expect(document.body.textContent).toContain('世界地图');
     expect(document.body.textContent).toContain('傍晚 18:00');
+    expect(document.body.textContent).toContain('设置流式输出速度');
   });
 
   it('renders chat history entries with speaker labels', () => {
@@ -146,23 +147,126 @@ describe('renderApp', () => {
     expect(document.body.textContent).toContain('刚才那场对话像一阵风一样过去了');
     expect(document.body.textContent).not.toContain('记忆');
   });
+
+  it('renders a stream speed panel when the speed menu is open', () => {
+    const state = {
+      ...createInitialState(),
+      ui: {
+        ...createInitialState().ui,
+        isStreamSpeedMenuOpen: true
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('流式输出速度');
+    expect(document.body.textContent).toContain('每秒');
+  });
+
+  it('shows an animated scene-generation placeholder while an event is loading', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      },
+      ui: {
+        ...state.ui,
+        generatingSceneIds: ['classroom']
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('正在生成事件中');
+    expect(document.querySelector('.story-placeholder.is-loading')).not.toBeNull();
+    expect(document.querySelectorAll('.loading-dot')).toHaveLength(3);
+  });
+
+  it('shows the stored generation error for the current scene when planning fails', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      },
+      ui: {
+        ...state.ui,
+        sceneGenerationErrors: {
+          classroom: '模型请求失败：401'
+        }
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('事件生成失败：模型请求失败：401');
+  });
+
+  it('prefers the current scene loading placeholder over another scene active event content', () => {
+    let state = createInitialState();
+    state = startEvent(
+      state,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      })
+    );
+    state = appendTranscriptMessage(state, { role: 'character', label: '林澄', content: '教室里的旧内容。' });
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'hallway'
+      },
+      ui: {
+        ...state.ui,
+        generatingSceneIds: ['hallway']
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('正在生成事件中');
+    expect(document.body.textContent).not.toContain('教室里的旧内容');
+    expect(document.body.textContent).not.toContain('放学后的空教室');
+  });
 });
 
 describe('createApp', () => {
-  it('delegates initial rendering to bindUi without a second bootstrap render', async () => {
+  it('passes stored settings into bindUi without a second bootstrap render', async () => {
     const bindUi = vi.fn();
-    const renderApp = vi.fn();
-    const createInitialState = vi.fn();
+    const createInitialState = vi.fn(() => ({
+      settings: {
+        availableModels: ['deepseek-chat', 'gpt-4o-mini'],
+        currentModel: 'deepseek-chat',
+        streamCharsPerSecond: 17
+      }
+    }));
+    const loadStoredSettings = vi.fn(() => ({
+      currentModel: 'gpt-4o-mini',
+      streamCharsPerSecond: 5
+    }));
 
     vi.resetModules();
     vi.doMock('../../src/ui/bindings', () => ({
       bindUi
     }));
-    vi.doMock('../../src/ui/renderApp', () => ({
-      renderApp
-    }));
     vi.doMock('../../src/state/store', () => ({
       createInitialState
+    }));
+    vi.doMock('../../src/settings/storage', () => ({
+      loadStoredSettings
     }));
 
     const { createApp } = await import('../../src/app/createApp');
@@ -171,13 +275,19 @@ describe('createApp', () => {
     createApp(root);
 
     expect(bindUi).toHaveBeenCalledOnce();
-    expect(bindUi).toHaveBeenCalledWith(root);
-    expect(renderApp).not.toHaveBeenCalled();
-    expect(createInitialState).not.toHaveBeenCalled();
+    expect(bindUi).toHaveBeenCalledWith(root, {
+      settings: {
+        availableModels: ['deepseek-chat', 'gpt-4o-mini'],
+        currentModel: 'gpt-4o-mini',
+        streamCharsPerSecond: 5
+      }
+    });
+    expect(createInitialState).toHaveBeenCalledOnce();
+    expect(loadStoredSettings).toHaveBeenCalledOnce();
 
     vi.doUnmock('../../src/ui/bindings');
-    vi.doUnmock('../../src/ui/renderApp');
     vi.doUnmock('../../src/state/store');
+    vi.doUnmock('../../src/settings/storage');
     vi.resetModules();
   });
 });

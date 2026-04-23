@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildChatRequest,
   buildEventPlanRequest,
@@ -9,9 +9,24 @@ import {
   parseEventTimeSettlement,
   parsePlannedSceneEvent,
   parseSseDelta,
+  requestEventTimeSettlement,
+  requestGeneratedSceneEvent,
+  requestStoryReply,
+  requestStoryReplyStream,
   stripEventEndMarker
 } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
+
+const CHAT_ENV = {
+  VITE_CHAT_COMPLETIONS_URL: 'https://example.com/v1/chat/completions',
+  VITE_CHAT_API_KEY: 'test-key',
+  VITE_CHAT_MODEL: 'deepseek-chat'
+} as const;
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe('chatClient helpers', () => {
   it('builds an OpenAI-compatible chat payload', () => {
@@ -199,5 +214,85 @@ describe('chatClient helpers', () => {
     });
 
     expect(settlement.minutesElapsed).toBeGreaterThanOrEqual(45);
+  });
+
+  it('throws when story reply is requested without model config', async () => {
+    vi.stubEnv('VITE_CHAT_COMPLETIONS_URL', '');
+    vi.stubEnv('VITE_CHAT_API_KEY', '');
+    vi.stubEnv('VITE_CHAT_MODEL', '');
+
+    await expect(
+      requestStoryReply({
+        characterProfile: '角色名：林澄\n性别：女\n身份：女高中生',
+        memorySummary: '你已经认识林澄。',
+        memoryFacts: ['她最近经常去医院'],
+        locationLabel: '学校 / 教室',
+        eventTitle: '放学后的空教室',
+        castName: '林澄',
+        transcript: [],
+        playerInput: '你好。'
+      })
+    ).rejects.toThrow('缺少模型配置');
+  });
+
+  it('throws when event planning request fails', async () => {
+    vi.stubEnv('VITE_CHAT_COMPLETIONS_URL', CHAT_ENV.VITE_CHAT_COMPLETIONS_URL);
+    vi.stubEnv('VITE_CHAT_API_KEY', CHAT_ENV.VITE_CHAT_API_KEY);
+    vi.stubEnv('VITE_CHAT_MODEL', CHAT_ENV.VITE_CHAT_MODEL);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('unauthorized', { status: 401, statusText: 'Unauthorized' }))
+    );
+
+    await expect(
+      requestGeneratedSceneEvent({
+        model: 'gpt-4.1-mini',
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        timeLabel: '傍晚 18:00',
+        timeSlot: 'evening',
+        memorySummary: '你刚开始在这座城市里探索。',
+        memoryFacts: [],
+        worldRevision: 0
+      })
+    ).rejects.toThrow('模型请求失败：401');
+  });
+
+  it('throws when event settlement request fails', async () => {
+    vi.stubEnv('VITE_CHAT_COMPLETIONS_URL', CHAT_ENV.VITE_CHAT_COMPLETIONS_URL);
+    vi.stubEnv('VITE_CHAT_API_KEY', CHAT_ENV.VITE_CHAT_API_KEY);
+    vi.stubEnv('VITE_CHAT_MODEL', CHAT_ENV.VITE_CHAT_MODEL);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('boom', { status: 500, statusText: 'Server Error' })));
+
+    await expect(
+      requestEventTimeSettlement({
+        model: 'gpt-4.1-mini',
+        startTimeLabel: '傍晚 18:00',
+        locationLabel: '学校 / 教室',
+        eventTitle: '放学后的空教室',
+        transcript: ['你：今天怎么还没回家？', '林澄：我想再坐一会儿。'],
+        eventFacts: ['剧情阶段进入build_up']
+      })
+    ).rejects.toThrow('模型请求失败：500');
+  });
+
+  it('throws when streaming reply request fails', async () => {
+    vi.stubEnv('VITE_CHAT_COMPLETIONS_URL', CHAT_ENV.VITE_CHAT_COMPLETIONS_URL);
+    vi.stubEnv('VITE_CHAT_API_KEY', CHAT_ENV.VITE_CHAT_API_KEY);
+    vi.stubEnv('VITE_CHAT_MODEL', CHAT_ENV.VITE_CHAT_MODEL);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('rate limited', { status: 429, statusText: 'Too Many Requests' })));
+
+    const stream = requestStoryReplyStream({
+      characterProfile: '角色名：林澄\n性别：女\n身份：女高中生',
+      memorySummary: '你已经认识林澄。',
+      memoryFacts: ['她最近经常去医院'],
+      locationLabel: '学校 / 教室',
+      eventTitle: '放学后的空教室',
+      castName: '林澄',
+      transcript: [],
+      playerInput: '你好。'
+    });
+
+    await expect(stream.next()).rejects.toThrow('模型请求失败：429');
   });
 });

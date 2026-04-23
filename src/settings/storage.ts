@@ -4,7 +4,7 @@ export interface StoredSettings {
 }
 
 const SETTINGS_STORAGE_KEY = 'romance-map-chat-game.settings';
-const DEFAULT_STREAM_CHARS_PER_SECOND = 8;
+const DEFAULT_STREAM_CHARS_PER_SECOND = 17;
 const MIN_STREAM_CHARS_PER_SECOND = 1;
 const MAX_STREAM_CHARS_PER_SECOND = 20;
 

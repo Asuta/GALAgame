@@ -15,7 +15,10 @@ export interface GameState {
   ui: {
     mode: Mode;
     isModelMenuOpen: boolean;
+    isStreamSpeedMenuOpen: boolean;
     isSending: boolean;
+    generatingSceneIds: string[];
+    sceneGenerationErrors: Record<string, string>;
     sceneSummary: {
       sceneId: string | null;
       content: string | null;
@@ -46,6 +49,7 @@ export interface GameState {
   settings: {
     availableModels: string[];
     currentModel: string;
+    streamCharsPerSecond: number;
   };
 }
 
@@ -134,7 +138,10 @@ export const createInitialState = (): GameState => ({
   ui: {
     mode: 'explore',
     isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false,
     isSending: false,
+    generatingSceneIds: [],
+    sceneGenerationErrors: {},
     sceneSummary: {
       sceneId: null,
       content: null
@@ -164,7 +171,8 @@ export const createInitialState = (): GameState => ({
   },
   settings: {
     availableModels: ['deepseek-reasoner', 'deepseek-chat', 'gpt-4o-mini', 'gpt-4.1-mini', 'claude-3.5-sonnet'],
-    currentModel: 'deepseek-chat'
+    currentModel: 'deepseek-chat',
+    streamCharsPerSecond: 17
   }
 });
 
@@ -178,6 +186,7 @@ export const enterRegion = (state: GameState, regionId: string): GameState => ({
     ...state.ui,
     mode: 'explore',
     isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false,
     isSending: false,
     sceneSummary: {
       sceneId: null,
@@ -420,6 +429,39 @@ export const setSceneSummary = (state: GameState, sceneId: string, content: stri
   }
 });
 
+export const startSceneGeneration = (state: GameState, sceneId: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    generatingSceneIds: state.ui.generatingSceneIds.includes(sceneId)
+      ? state.ui.generatingSceneIds
+      : [...state.ui.generatingSceneIds, sceneId],
+    sceneGenerationErrors: Object.fromEntries(
+      Object.entries(state.ui.sceneGenerationErrors).filter(([key]) => key !== sceneId)
+    )
+  }
+});
+
+export const finishSceneGeneration = (state: GameState, sceneId: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    generatingSceneIds: state.ui.generatingSceneIds.filter((id) => id !== sceneId)
+  }
+});
+
+export const setSceneGenerationError = (state: GameState, sceneId: string, message: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    generatingSceneIds: state.ui.generatingSceneIds.filter((id) => id !== sceneId),
+    sceneGenerationErrors: {
+      ...state.ui.sceneGenerationErrors,
+      [sceneId]: message
+    }
+  }
+});
+
 export const appendTranscriptMessage = (state: GameState, entry: TranscriptMessage): GameState => ({
   ...state,
   event: {
@@ -432,7 +474,8 @@ export const toggleModelMenu = (state: GameState): GameState => ({
   ...state,
   ui: {
     ...state.ui,
-    isModelMenuOpen: !state.ui.isModelMenuOpen
+    isModelMenuOpen: !state.ui.isModelMenuOpen,
+    isStreamSpeedMenuOpen: false
   }
 });
 
@@ -444,7 +487,29 @@ export const setCurrentModel = (state: GameState, model: string): GameState => (
   },
   ui: {
     ...state.ui,
-    isModelMenuOpen: false
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false
+  }
+});
+
+export const toggleStreamSpeedMenu = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: !state.ui.isStreamSpeedMenuOpen
+  }
+});
+
+export const setStreamCharsPerSecond = (state: GameState, value: number): GameState => ({
+  ...state,
+  settings: {
+    ...state.settings,
+    streamCharsPerSecond: value
+  },
+  ui: {
+    ...state.ui,
+    isStreamSpeedMenuOpen: false
   }
 });
 

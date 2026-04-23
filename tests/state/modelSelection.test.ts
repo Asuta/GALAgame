@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createInitialState, setCurrentModel, toggleModelMenu } from '../../src/state/store';
+import {
+  createInitialState,
+  setCurrentModel,
+  setStreamCharsPerSecond,
+  toggleModelMenu,
+  toggleStreamSpeedMenu
+} from '../../src/state/store';
 
 describe('model selection state', () => {
   it('uses deepseek-chat as the default model', () => {
@@ -17,5 +23,16 @@ describe('model selection state', () => {
     state = setCurrentModel(state, 'gpt-4o-mini');
     expect(state.settings.currentModel).toBe('gpt-4o-mini');
     expect(state.ui.isModelMenuOpen).toBe(false);
+  });
+
+  it('toggles stream speed menu and updates the speed immediately', () => {
+    let state = createInitialState();
+
+    state = toggleStreamSpeedMenu(state);
+    expect(state.ui.isStreamSpeedMenuOpen).toBe(true);
+
+    state = setStreamCharsPerSecond(state, 3);
+    expect(state.settings.streamCharsPerSecond).toBe(3);
+    expect(state.ui.isStreamSpeedMenuOpen).toBe(false);
   });
 });
