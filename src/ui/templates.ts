@@ -46,6 +46,9 @@ export const createAppMarkup = (state: GameState): string => {
     ? `【${activeEvent.title}】\n${activeEvent.openingState}`
     : visibleSceneSummary ?? currentScene?.description ?? '选择一个区域，看看接下来会发生什么。';
 
+  const streamSpeedHint =
+    state.settings.streamCharsPerSecond <= 4 ? '慢' : state.settings.streamCharsPerSecond >= 12 ? '快' : '默认';
+
   return `
     <div class="phone-frame">
       <section class="visual-panel" data-testid="visual-panel">
@@ -85,7 +88,30 @@ export const createAppMarkup = (state: GameState): string => {
         </div>
         <div class="input-row">
           <textarea placeholder="进入事件后，在这里输入你想说的话。回车发送，Shift+回车换行。" ${state.ui.mode === 'event' ? '' : 'disabled'}></textarea>
+          ${state.ui.isStreamSpeedMenuOpen
+            ? `<div class="stream-speed-panel">
+                <div class="stream-speed-header">
+                  <strong>流式输出速度</strong>
+                  <span>${state.settings.streamCharsPerSecond} 字/秒 · ${streamSpeedHint}</span>
+                </div>
+                <input
+                  class="stream-speed-slider"
+                  data-stream-speed-slider
+                  type="range"
+                  min="1"
+                  max="20"
+                  step="1"
+                  value="${state.settings.streamCharsPerSecond}"
+                />
+                <div class="stream-speed-scale">
+                  <span>慢</span>
+                  <span>每秒</span>
+                  <span>快</span>
+                </div>
+              </div>`
+            : ''}
           <div class="action-row">
+            <button data-action="toggle-stream-speed">设置流式输出速度</button>
             <button data-action="compress">整理线索</button>
             <button data-action="end-event" ${state.ui.mode === 'event' && !state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
             <button data-action="back">离开地点</button>

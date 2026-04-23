@@ -206,6 +206,32 @@ body {
   color: white;
 }
 
+.stream-speed-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.stream-speed-header,
+.stream-speed-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stream-speed-header span,
+.stream-speed-scale span {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+}
+
+.stream-speed-slider {
+  width: 100%;
+}
+
 .mode-pill {
   padding: 4px 10px;
   border-radius: 999px;

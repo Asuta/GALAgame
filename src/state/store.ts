@@ -15,6 +15,7 @@ export interface GameState {
   ui: {
     mode: Mode;
     isModelMenuOpen: boolean;
+    isStreamSpeedMenuOpen: boolean;
     isSending: boolean;
     sceneSummary: {
       sceneId: string | null;
@@ -46,6 +47,7 @@ export interface GameState {
   settings: {
     availableModels: string[];
     currentModel: string;
+    streamCharsPerSecond: number;
   };
 }
 
@@ -134,6 +136,7 @@ export const createInitialState = (): GameState => ({
   ui: {
     mode: 'explore',
     isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false,
     isSending: false,
     sceneSummary: {
       sceneId: null,
@@ -164,7 +167,8 @@ export const createInitialState = (): GameState => ({
   },
   settings: {
     availableModels: ['deepseek-reasoner', 'deepseek-chat', 'gpt-4o-mini', 'gpt-4.1-mini', 'claude-3.5-sonnet'],
-    currentModel: 'deepseek-chat'
+    currentModel: 'deepseek-chat',
+    streamCharsPerSecond: 17
   }
 });
 
@@ -178,6 +182,7 @@ export const enterRegion = (state: GameState, regionId: string): GameState => ({
     ...state.ui,
     mode: 'explore',
     isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false,
     isSending: false,
     sceneSummary: {
       sceneId: null,
@@ -432,7 +437,8 @@ export const toggleModelMenu = (state: GameState): GameState => ({
   ...state,
   ui: {
     ...state.ui,
-    isModelMenuOpen: !state.ui.isModelMenuOpen
+    isModelMenuOpen: !state.ui.isModelMenuOpen,
+    isStreamSpeedMenuOpen: false
   }
 });
 
@@ -444,7 +450,29 @@ export const setCurrentModel = (state: GameState, model: string): GameState => (
   },
   ui: {
     ...state.ui,
-    isModelMenuOpen: false
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false
+  }
+});
+
+export const toggleStreamSpeedMenu = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: !state.ui.isStreamSpeedMenuOpen
+  }
+});
+
+export const setStreamCharsPerSecond = (state: GameState, value: number): GameState => ({
+  ...state,
+  settings: {
+    ...state.settings,
+    streamCharsPerSecond: value
+  },
+  ui: {
+    ...state.ui,
+    isStreamSpeedMenuOpen: false
   }
 });
 
