@@ -120,6 +120,51 @@ describe('renderApp', () => {
     expect(document.body.textContent).toContain('学校 / 教室');
   });
 
+  it('shows only the event-ending action during an active event', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      }
+    };
+    state = startEvent(
+      state,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      })
+    );
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-action="end-event"]')).not.toBeNull();
+    expect(document.querySelector('[data-action="back"]')).toBeNull();
+  });
+
+  it('shows only the leave-location action while exploring', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'hospital',
+        currentSceneId: null
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-action="end-event"]')).toBeNull();
+    expect(document.querySelector('[data-action="back"]')).not.toBeNull();
+  });
+
   it('does not render the internal memory panel for players', () => {
     const state = createInitialState();
 
