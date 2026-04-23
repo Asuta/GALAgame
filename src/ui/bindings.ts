@@ -2,6 +2,8 @@ import { worldData } from '../data/world';
 import { requestEventTimeSettlement, requestGeneratedSceneEvent, requestStoryReplyStream, stripEventEndMarker } from '../logic/chatClient';
 import { buildPlayerFacingSceneSummary, summarizeResolvedEvent, compressMemory } from '../logic/memory';
 import { getVisibleActiveEvent } from '../state/selectors';
+import { appendStreamWithRateLimit } from '../logic/streamDisplay';
+import { clampStreamCharsPerSecond, loadStoredSettings, saveStoredSettings } from '../settings/storage';
 import {
   appendActiveEventFacts,
   advanceClockByMinutes,
@@ -23,8 +25,10 @@ import {
   setSceneGenerationError,
   setCurrentModel,
   startSceneGeneration,
+  setStreamCharsPerSecond,
   startEvent,
   startStreamingReply,
+  toggleStreamSpeedMenu,
   toggleModelMenu,
   updateMemory,
   finishSceneGeneration,
@@ -61,8 +65,31 @@ const buildCharacterProfile = (name?: string): string => {
   ].join('\n');
 };
 
-export const bindUi = (root: HTMLDivElement): void => {
-  let state: GameState = createInitialState();
+const applyStoredSettings = (state: GameState): GameState => {
+  const stored = loadStoredSettings();
+
+  return {
+    ...state,
+    settings: {
+      ...state.settings,
+      currentModel: stored.currentModel && state.settings.availableModels.includes(stored.currentModel)
+        ? stored.currentModel
+        : state.settings.currentModel,
+      streamCharsPerSecond:
+        typeof stored.streamCharsPerSecond === 'number' ? stored.streamCharsPerSecond : state.settings.streamCharsPerSecond
+    }
+  };
+};
+
+const persistSettings = (state: GameState): void => {
+  saveStoredSettings({
+    currentModel: state.settings.currentModel,
+    streamCharsPerSecond: state.settings.streamCharsPerSecond
+  });
+};
+
+export const bindUi = (root: HTMLDivElement, initialState = createInitialState()): void => {
+  let state: GameState = applyStoredSettings(initialState);
 
   const rerender = () => {
     renderApp(root, state);
@@ -154,25 +181,29 @@ export const bindUi = (root: HTMLDivElement): void => {
     rerender();
 
     try {
-      for await (const chunk of requestStoryReplyStream({
-        model: state.settings.currentModel,
-        characterProfile: buildCharacterProfile(activeEvent.cast[0]),
-        memorySummary: state.memory.summary,
-        memoryFacts: state.memory.facts,
-        locationLabel: activeEvent.locationLabel,
-        eventTitle: activeEvent.title,
-        castName: activeEvent.cast[0] || '旁白',
-        eventPhase: activeEvent.currentPhase,
-        phaseGoal: activeEvent.buildUpGoal,
-        overlimitTrigger: activeEvent.overlimitTrigger,
-        suspenseThreads: activeEvent.suspenseThreads,
-        transcript: state.event.transcript.map((message) => `${message.label}：${message.content}`),
-        playerInput: intent === 'end_event' ? '请基于当前气氛，自然地把这一幕收尾。' : playerInput,
-        intent
-      })) {
-        state = appendStreamingReply(state, chunk);
-        rerender();
-      }
+      await appendStreamWithRateLimit({
+        source: requestStoryReplyStream({
+          model: state.settings.currentModel,
+          characterProfile: buildCharacterProfile(activeEvent.cast[0]),
+          memorySummary: state.memory.summary,
+          memoryFacts: state.memory.facts,
+          locationLabel: activeEvent.locationLabel,
+          eventTitle: activeEvent.title,
+          castName: activeEvent.cast[0] || '旁白',
+          eventPhase: activeEvent.currentPhase,
+          phaseGoal: activeEvent.buildUpGoal,
+          overlimitTrigger: activeEvent.overlimitTrigger,
+          suspenseThreads: activeEvent.suspenseThreads,
+          transcript: state.event.transcript.map((message) => `${message.label}：${message.content}`),
+          playerInput: intent === 'end_event' ? '请基于当前气氛，自然地把这一幕收尾。' : playerInput,
+          intent
+        }),
+        getCharsPerSecond: () => state.settings.streamCharsPerSecond,
+        onCharacter: (character) => {
+          state = appendStreamingReply(state, character);
+          rerender();
+        }
+      });
 
       const streamingResult = stripEventEndMarker(state.event.streamingReply);
       state = {
@@ -269,8 +300,21 @@ export const bindUi = (root: HTMLDivElement): void => {
     root.querySelectorAll<HTMLButtonElement>('[data-model-id]').forEach((button) => {
       button.addEventListener('click', () => {
         state = setCurrentModel(state, button.dataset.modelId as string);
+        persistSettings(state);
         rerender();
       });
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="toggle-stream-speed"]')?.addEventListener('click', () => {
+      state = toggleStreamSpeedMenu(state);
+      rerender();
+    });
+
+    root.querySelector<HTMLInputElement>('[data-stream-speed-slider]')?.addEventListener('change', (event) => {
+      const nextValue = clampStreamCharsPerSecond(Number((event.currentTarget as HTMLInputElement).value));
+      state = setStreamCharsPerSecond(state, nextValue);
+      persistSettings(state);
+      rerender();
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="back"]')?.addEventListener('click', () => {

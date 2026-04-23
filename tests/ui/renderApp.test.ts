@@ -15,6 +15,7 @@ describe('renderApp', () => {
     expect(document.querySelector('[data-testid="dialogue-panel"]')).not.toBeNull();
     expect(document.body.textContent).toContain('世界地图');
     expect(document.body.textContent).toContain('傍晚 18:00');
+    expect(document.body.textContent).toContain('设置流式输出速度');
   });
 
   it('renders chat history entries with speaker labels', () => {
@@ -80,6 +81,22 @@ describe('renderApp', () => {
 
     expect(document.body.textContent).toContain('刚才那场对话像一阵风一样过去了');
     expect(document.body.textContent).not.toContain('记忆');
+  });
+
+  it('renders a stream speed panel when the speed menu is open', () => {
+    const state = {
+      ...createInitialState(),
+      ui: {
+        ...createInitialState().ui,
+        isStreamSpeedMenuOpen: true
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('流式输出速度');
+    expect(document.body.textContent).toContain('每秒');
   });
 
   it('shows an animated scene-generation placeholder while an event is loading', () => {
