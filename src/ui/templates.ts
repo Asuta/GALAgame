@@ -169,8 +169,11 @@ export const createAppMarkup = (state: GameState): string => {
           <div class="action-row">
             <button data-action="toggle-stream-speed">设置流式输出速度</button>
             <button data-action="compress">整理线索</button>
-            <button data-action="end-event" ${visibleActiveEvent && !state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
-            <button data-action="back">离开地点</button>
+            ${
+              visibleActiveEvent
+                ? `<button data-action="end-event" ${!state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>`
+                : '<button data-action="back">离开地点</button>'
+            }
             <button data-action="send" ${visibleActiveEvent && !state.ui.isSending ? '' : 'disabled'}>
               ${escapeHtml(state.ui.isSending ? '生成中' : '发送')}
             </button>
