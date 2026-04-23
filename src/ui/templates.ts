@@ -1,11 +1,12 @@
 import { worldData } from '../data/world';
-import { getActiveEvent, getCurrentRegion, getCurrentScene } from '../state/selectors';
+import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEvent } from '../state/selectors';
 import type { GameState } from '../state/store';
 
 export const createAppMarkup = (state: GameState): string => {
   const currentRegion = getCurrentRegion(state);
   const currentScene = getCurrentScene(state);
   const activeEvent = getActiveEvent(state);
+  const visibleActiveEvent = getVisibleActiveEvent(state);
 
   const regionButtons = worldData.regions
     .map((region) => `<button class="choice-button" data-region-id="${region.id}">${region.name}</button>`)
@@ -18,22 +19,26 @@ export const createAppMarkup = (state: GameState): string => {
         .join('')
     : '';
 
-  const historyMarkup = state.event.transcript
-    .map(
-      (message) => `
-        <div class="chat-message ${message.role}">
-          <div class="chat-label">${message.label}</div>
-          <div class="chat-content">${message.content}</div>
-        </div>
-      `
-    )
-    .join('');
+  const shouldShowTranscript = !activeEvent || !!visibleActiveEvent;
+
+  const historyMarkup = shouldShowTranscript
+    ? state.event.transcript
+        .map(
+          (message) => `
+            <div class="chat-message ${message.role}">
+              <div class="chat-label">${message.label}</div>
+              <div class="chat-content">${message.content}</div>
+            </div>
+          `
+        )
+        .join('')
+    : '';
 
   const streamingMarkup =
-    state.event.streamingReply && state.ui.mode === 'event'
+    state.event.streamingReply && state.ui.mode === 'event' && visibleActiveEvent
       ? `
         <div class="chat-message character is-streaming">
-          <div class="chat-label">${state.event.streamingLabel || activeEvent?.cast[0] || '角色'}</div>
+          <div class="chat-label">${state.event.streamingLabel || visibleActiveEvent.cast[0] || '角色'}</div>
           <div class="chat-content">${state.event.streamingReply}<span class="stream-cursor"></span></div>
         </div>
       `
@@ -41,10 +46,27 @@ export const createAppMarkup = (state: GameState): string => {
 
   const visibleSceneSummary =
     currentScene && state.ui.sceneSummary.sceneId === currentScene.id ? state.ui.sceneSummary.content : null;
+  const currentSceneError = currentScene ? state.ui.sceneGenerationErrors[currentScene.id] : null;
 
-  const emptyPrompt = activeEvent
-    ? `【${activeEvent.title}】\n${activeEvent.openingState}`
-    : visibleSceneSummary ?? currentScene?.description ?? '选择一个区域，看看接下来会发生什么。';
+  const loadingPlaceholder =
+    currentScene && state.ui.generatingSceneIds.includes(currentScene.id) && !visibleActiveEvent
+      ? `
+        <div class="story-placeholder is-loading" aria-live="polite">
+          <span class="loading-text">正在生成事件中</span>
+          <span class="loading-dots" aria-hidden="true">
+            <span class="loading-dot"></span>
+            <span class="loading-dot"></span>
+            <span class="loading-dot"></span>
+          </span>
+        </div>
+      `
+      : null;
+
+  const emptyPrompt = visibleActiveEvent
+    ? `【${visibleActiveEvent.title}】\n${visibleActiveEvent.openingState}`
+    : currentSceneError
+      ? `事件生成失败：${currentSceneError}`
+      : visibleSceneSummary ?? currentScene?.description ?? '选择一个区域，看看接下来会发生什么。';
 
   return `
     <div class="phone-frame">
@@ -63,7 +85,7 @@ export const createAppMarkup = (state: GameState): string => {
           <div class="status-tools">
             <span class="time-pill">${state.clock.label}</span>
             <button class="model-toggle" data-action="toggle-model-menu">${state.settings.currentModel}</button>
-            <span class="mode-pill">${state.ui.mode === 'event' ? '事件中' : '探索中'}</span>
+            <span class="mode-pill">${visibleActiveEvent ? '事件中' : '探索中'}</span>
           </div>
         </header>
         ${state.ui.isModelMenuOpen
@@ -77,19 +99,19 @@ export const createAppMarkup = (state: GameState): string => {
             </div>`
           : ''}
         <article class="story-box" data-chat-history>
-          ${historyMarkup || `<div class="story-placeholder">${emptyPrompt}</div>`}
+          ${historyMarkup || loadingPlaceholder || `<div class="story-placeholder">${emptyPrompt}</div>`}
           ${streamingMarkup}
         </article>
         <div class="choices">
           ${currentRegion ? sceneButtons : regionButtons}
         </div>
         <div class="input-row">
-          <textarea placeholder="进入事件后，在这里输入你想说的话。回车发送，Shift+回车换行。" ${state.ui.mode === 'event' ? '' : 'disabled'}></textarea>
+          <textarea placeholder="进入事件后，在这里输入你想说的话。回车发送，Shift+回车换行。" ${visibleActiveEvent ? '' : 'disabled'}></textarea>
           <div class="action-row">
             <button data-action="compress">整理线索</button>
-            <button data-action="end-event" ${state.ui.mode === 'event' && !state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
+            <button data-action="end-event" ${visibleActiveEvent && !state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
             <button data-action="back">离开地点</button>
-            <button data-action="send" ${state.ui.mode === 'event' && !state.ui.isSending ? '' : 'disabled'}>
+            <button data-action="send" ${visibleActiveEvent && !state.ui.isSending ? '' : 'disabled'}>
               ${state.ui.isSending ? '生成中' : '发送'}
             </button>
           </div>

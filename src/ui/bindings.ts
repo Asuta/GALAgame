@@ -1,6 +1,7 @@
 import { worldData } from '../data/world';
 import { requestEventTimeSettlement, requestGeneratedSceneEvent, requestStoryReplyStream, stripEventEndMarker } from '../logic/chatClient';
 import { buildPlayerFacingSceneSummary, summarizeResolvedEvent, compressMemory } from '../logic/memory';
+import { getVisibleActiveEvent } from '../state/selectors';
 import {
   appendActiveEventFacts,
   advanceClockByMinutes,
@@ -19,11 +20,14 @@ import {
   recordWorldAdvance,
   selectSceneEventSeed,
   setSceneSummary,
+  setSceneGenerationError,
   setCurrentModel,
+  startSceneGeneration,
   startEvent,
   startStreamingReply,
   toggleModelMenu,
   updateMemory,
+  finishSceneGeneration,
   type GameState
 } from '../state/store';
 import { renderApp } from './renderApp';
@@ -89,42 +93,57 @@ export const bindUi = (root: HTMLDivElement): void => {
       }
     }
 
+    if (state.ui.generatingSceneIds.includes(sceneId)) {
+      rerender();
+      return;
+    }
+
     if (state.event.sceneEventCache[sceneId]) {
       state = invalidateSceneEventCache(state, sceneId);
     }
+
+    state = startSceneGeneration(state, sceneId);
+    rerender();
 
     const locationLabel = resolveLocationLabel(state);
     const planningScene = {
       ...scene,
       eventSeed: selectSceneEventSeed(state, scene)
     };
-    const plannedEvent = await requestGeneratedSceneEvent({
-      model: state.settings.currentModel,
-      scene: planningScene,
-      locationLabel,
-      timeLabel: state.clock.label,
-      timeSlot: state.clock.timeSlot,
-      memorySummary: state.memory.summary,
-      memoryFacts: state.memory.facts,
-      worldRevision: state.world.revision
-    });
+    try {
+      const plannedEvent = await requestGeneratedSceneEvent({
+        model: state.settings.currentModel,
+        scene: planningScene,
+        locationLabel,
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot,
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        worldRevision: state.world.revision
+      });
 
-    state = cacheSceneEvent(state, plannedEvent);
-    const cachedEvent = state.event.sceneEventCache[sceneId];
+      state = cacheSceneEvent(state, plannedEvent);
+      const cachedEvent = state.event.sceneEventCache[sceneId];
 
-    if (cachedEvent) {
-      state = startEvent(state, cachedEvent);
+      if (cachedEvent && state.navigation.currentSceneId === sceneId && !getVisibleActiveEvent(state)) {
+        state = startEvent(state, cachedEvent);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      state = setSceneGenerationError(state, sceneId, message);
+    } finally {
+      state = finishSceneGeneration(state, sceneId);
     }
 
     rerender();
   };
 
   const runEventTurn = async (playerInput: string, intent: 'continue' | 'end_event') => {
-    if (!state.event.activeEvent || state.ui.isSending) {
+    const activeEvent = getVisibleActiveEvent(state);
+
+    if (!activeEvent || state.ui.isSending) {
       return;
     }
-
-    const activeEvent = state.event.activeEvent;
 
     state = appendTranscriptMessage(state, {
       role: 'player',
@@ -219,8 +238,9 @@ export const bindUi = (root: HTMLDivElement): void => {
     const submitCurrentInput = () => {
       const input = root.querySelector<HTMLTextAreaElement>('textarea');
       const value = input?.value.trim();
+      const visibleActiveEvent = getVisibleActiveEvent(state);
 
-      if (!input || !value || !state.event.activeEvent || state.ui.isSending) {
+      if (!input || !value || !visibleActiveEvent || state.ui.isSending) {
         return;
       }
 
@@ -254,7 +274,7 @@ export const bindUi = (root: HTMLDivElement): void => {
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="back"]')?.addEventListener('click', () => {
-      if (state.ui.mode === 'event') {
+      if (getVisibleActiveEvent(state)) {
         void runEventTurn('', 'end_event');
         return;
       } else if (state.navigation.currentSceneId) {
@@ -279,7 +299,7 @@ export const bindUi = (root: HTMLDivElement): void => {
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="end-event"]')?.addEventListener('click', () => {
-      if (state.ui.mode !== 'event') {
+      if (!getVisibleActiveEvent(state)) {
         return;
       }
 

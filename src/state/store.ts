@@ -16,6 +16,8 @@ export interface GameState {
     mode: Mode;
     isModelMenuOpen: boolean;
     isSending: boolean;
+    generatingSceneIds: string[];
+    sceneGenerationErrors: Record<string, string>;
     sceneSummary: {
       sceneId: string | null;
       content: string | null;
@@ -135,6 +137,8 @@ export const createInitialState = (): GameState => ({
     mode: 'explore',
     isModelMenuOpen: false,
     isSending: false,
+    generatingSceneIds: [],
+    sceneGenerationErrors: {},
     sceneSummary: {
       sceneId: null,
       content: null
@@ -416,6 +420,39 @@ export const setSceneSummary = (state: GameState, sceneId: string, content: stri
     sceneSummary: {
       sceneId,
       content
+    }
+  }
+});
+
+export const startSceneGeneration = (state: GameState, sceneId: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    generatingSceneIds: state.ui.generatingSceneIds.includes(sceneId)
+      ? state.ui.generatingSceneIds
+      : [...state.ui.generatingSceneIds, sceneId],
+    sceneGenerationErrors: Object.fromEntries(
+      Object.entries(state.ui.sceneGenerationErrors).filter(([key]) => key !== sceneId)
+    )
+  }
+});
+
+export const finishSceneGeneration = (state: GameState, sceneId: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    generatingSceneIds: state.ui.generatingSceneIds.filter((id) => id !== sceneId)
+  }
+});
+
+export const setSceneGenerationError = (state: GameState, sceneId: string, message: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    generatingSceneIds: state.ui.generatingSceneIds.filter((id) => id !== sceneId),
+    sceneGenerationErrors: {
+      ...state.ui.sceneGenerationErrors,
+      [sceneId]: message
     }
   }
 });

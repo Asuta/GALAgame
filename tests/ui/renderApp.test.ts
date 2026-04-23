@@ -81,4 +81,82 @@ describe('renderApp', () => {
     expect(document.body.textContent).toContain('刚才那场对话像一阵风一样过去了');
     expect(document.body.textContent).not.toContain('记忆');
   });
+
+  it('shows an animated scene-generation placeholder while an event is loading', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      },
+      ui: {
+        ...state.ui,
+        generatingSceneIds: ['classroom']
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('正在生成事件中');
+    expect(document.querySelector('.story-placeholder.is-loading')).not.toBeNull();
+    expect(document.querySelectorAll('.loading-dot')).toHaveLength(3);
+  });
+
+  it('shows the stored generation error for the current scene when planning fails', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      },
+      ui: {
+        ...state.ui,
+        sceneGenerationErrors: {
+          classroom: '模型请求失败：401'
+        }
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('事件生成失败：模型请求失败：401');
+  });
+
+  it('prefers the current scene loading placeholder over another scene active event content', () => {
+    let state = createInitialState();
+    state = startEvent(
+      state,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      })
+    );
+    state = appendTranscriptMessage(state, { role: 'character', label: '林澄', content: '教室里的旧内容。' });
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'hallway'
+      },
+      ui: {
+        ...state.ui,
+        generatingSceneIds: ['hallway']
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('正在生成事件中');
+    expect(document.body.textContent).not.toContain('教室里的旧内容');
+    expect(document.body.textContent).not.toContain('放学后的空教室');
+  });
 });
