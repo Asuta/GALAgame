@@ -20,7 +20,8 @@ describe('renderApp', () => {
     expect(characterImage).toBeNull();
     expect(document.body.textContent).toContain('世界地图');
     expect(document.body.textContent).toContain('傍晚 18:00');
-    expect(document.body.textContent).toContain('设置流式输出速度');
+    expect(document.querySelector('[data-action="open-settings"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('设置流式输出速度');
   });
 
   it('renders chat history entries with speaker labels', () => {
@@ -148,12 +149,12 @@ describe('renderApp', () => {
     expect(document.body.textContent).not.toContain('记忆');
   });
 
-  it('renders a stream speed panel when the speed menu is open', () => {
+  it('renders stream speed controls on the separate settings page', () => {
     const state = {
       ...createInitialState(),
       ui: {
         ...createInitialState().ui,
-        isStreamSpeedMenuOpen: true
+        currentPage: 'settings' as const
       }
     };
 
@@ -162,6 +163,31 @@ describe('renderApp', () => {
 
     expect(document.body.textContent).toContain('流式输出速度');
     expect(document.body.textContent).toContain('每秒');
+    expect(document.querySelector('[data-action="back-to-game"]')).not.toBeNull();
+    expect(document.querySelector('[data-stream-speed-slider]')).not.toBeNull();
+  });
+
+  it('renders model options on the settings page and removes the main-page model toggle button', () => {
+    const settingsState = {
+      ...createInitialState(),
+      ui: {
+        ...createInitialState().ui,
+        currentPage: 'settings' as const
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, settingsState);
+
+    expect(document.body.textContent).toContain('模型选择');
+    expect(document.querySelectorAll('[data-model-id]')).toHaveLength(settingsState.settings.availableModels.length);
+    expect(document.querySelector('.model-option.is-active')?.textContent).toContain(settingsState.settings.currentModel);
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, createInitialState());
+
+    expect(document.querySelector('[data-action="toggle-model-menu"]')).toBeNull();
+    expect(document.querySelector('.model-menu')).toBeNull();
   });
 
   it('shows an animated scene-generation placeholder while an event is loading', () => {

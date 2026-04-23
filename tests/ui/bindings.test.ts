@@ -130,4 +130,46 @@ describe('bindUi scene switching', () => {
     );
     await flushUi();
   });
+
+  it('opens a separate settings page for stream speed and returns to the game', async () => {
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    expect(document.body.textContent).toContain('选择一个区域');
+    expect(document.body.textContent).not.toContain('流式输出速度');
+
+    (document.querySelector('[data-action="open-settings"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.body.textContent).toContain('设置');
+    expect(document.body.textContent).toContain('流式输出速度');
+    expect(document.querySelector('[data-stream-speed-slider]')).not.toBeNull();
+
+    (document.querySelector('[data-action="back-to-game"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.body.textContent).toContain('选择一个区域');
+    expect(document.body.textContent).not.toContain('流式输出速度');
+  });
+
+  it('changes model from the settings page and reflects it in the game header', async () => {
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-action="open-settings"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const targetButton = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-model-id]')).find(
+      (button) => button.dataset.modelId === 'gpt-4o-mini'
+    );
+
+    targetButton?.click();
+    await flushUi();
+
+    expect(document.querySelector('.model-option.is-active')?.textContent).toContain('gpt-4o-mini');
+
+    (document.querySelector('[data-action="back-to-game"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.body.textContent).toContain('gpt-4o-mini');
+    expect(document.querySelector('[data-action="toggle-model-menu"]')).toBeNull();
+  });
 });

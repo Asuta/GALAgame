@@ -19,6 +19,8 @@ import {
   invalidateSceneEventCache,
   isSceneEventReusable,
   markEventReadyToEnd,
+  closeSettingsPage,
+  openSettingsPage,
   recordWorldAdvance,
   selectSceneEventSeed,
   setSceneSummary,
@@ -28,8 +30,6 @@ import {
   setStreamCharsPerSecond,
   startEvent,
   startStreamingReply,
-  toggleStreamSpeedMenu,
-  toggleModelMenu,
   updateMemory,
   finishSceneGeneration,
   type GameState
@@ -292,11 +292,6 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       });
     });
 
-    root.querySelector<HTMLButtonElement>('[data-action="toggle-model-menu"]')?.addEventListener('click', () => {
-      state = toggleModelMenu(state);
-      rerender();
-    });
-
     root.querySelectorAll<HTMLButtonElement>('[data-model-id]').forEach((button) => {
       button.addEventListener('click', () => {
         state = setCurrentModel(state, button.dataset.modelId as string);
@@ -305,8 +300,13 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       });
     });
 
-    root.querySelector<HTMLButtonElement>('[data-action="toggle-stream-speed"]')?.addEventListener('click', () => {
-      state = toggleStreamSpeedMenu(state);
+    root.querySelector<HTMLButtonElement>('[data-action="open-settings"]')?.addEventListener('click', () => {
+      state = openSettingsPage(state);
+      rerender();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="back-to-game"]')?.addEventListener('click', () => {
+      state = closeSettingsPage(state);
       rerender();
     });
 
