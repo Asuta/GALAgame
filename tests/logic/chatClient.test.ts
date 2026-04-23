@@ -32,8 +32,8 @@ describe('chatClient helpers', () => {
     expect(payload.messages[0].role).toBe('system');
     expect(payload.messages[1].content).toContain('学校 / 教室');
     expect(payload.messages[1].content).toContain('林澄');
-    expect(payload.messages[0].content).toContain('中文小说片段');
-    expect(payload.messages[0].content).toContain('对白自然地融入叙述');
+    expect(payload.messages[0].content).toContain('使用“旁白：...”和“角色名：...”这种格式组织内容');
+    expect(payload.messages[0].content).toContain('保持现代恋爱文字冒险的细腻语气');
     expect(payload.messages[0].content).toContain('不要代替玩家');
     expect(payload.messages[1].content).toContain('性别：女');
   });
@@ -105,7 +105,7 @@ describe('chatClient helpers', () => {
     });
 
     expect(payload.messages[1].content).toContain('玩家准备结束当前事件');
-    expect(payload.messages[1].content).toContain('像小说收束一幕');
+    expect(payload.messages[1].content).toContain('请用一小段旁白和角色对白完成收束');
     expect(payload.messages[1].content).toContain('[EVENT_END]');
   });
 
