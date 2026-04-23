@@ -36,6 +36,8 @@ import {
 } from '../state/store';
 import { renderApp } from './renderApp';
 
+const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;
+
 const resolveLocationLabel = (state: GameState): string => {
   const region = worldData.regions.find((item) => item.id === state.navigation.currentRegionId);
   const scene = worldData.scenes.find((item) => item.id === state.navigation.currentSceneId);
@@ -90,12 +92,56 @@ const persistSettings = (state: GameState): void => {
 
 export const bindUi = (root: HTMLDivElement, initialState = createInitialState()): void => {
   let state: GameState = applyStoredSettings(initialState);
+  let shouldAutoScrollHistory = true;
+  let preservedHistoryScrollTop = 0;
+
+  const updateHistoryScrollPreference = (history: HTMLElement): void => {
+    const maxScrollTop = Math.max(history.scrollHeight - history.clientHeight, 0);
+    const nextScrollTop = Math.min(history.scrollTop, maxScrollTop);
+    const distanceFromBottom = maxScrollTop - nextScrollTop;
+
+    preservedHistoryScrollTop = nextScrollTop;
+    shouldAutoScrollHistory = distanceFromBottom <= AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
+  };
+
+  const applyHistoryScrollPosition = (history: HTMLElement): void => {
+    const maxScrollTop = Math.max(history.scrollHeight - history.clientHeight, 0);
+
+    if (shouldAutoScrollHistory) {
+      history.scrollTop = maxScrollTop;
+      preservedHistoryScrollTop = maxScrollTop;
+      return;
+    }
+
+    history.scrollTop = Math.min(preservedHistoryScrollTop, maxScrollTop);
+  };
+
+  const updateStreamingReplyDom = (): boolean => {
+    const history = root.querySelector<HTMLElement>('[data-chat-history]');
+    const streamingContent = root.querySelector<HTMLElement>('[data-streaming-content]');
+
+    if (!history || !streamingContent || state.ui.mode !== 'event' || !getVisibleActiveEvent(state)) {
+      return false;
+    }
+
+    streamingContent.textContent = state.event.streamingReply;
+    const cursor = document.createElement('span');
+    cursor.className = 'stream-cursor';
+    streamingContent.append(cursor);
+    applyHistoryScrollPosition(history);
+    return true;
+  };
 
   const rerender = () => {
+    const previousHistory = root.querySelector<HTMLElement>('[data-chat-history]');
+    if (previousHistory) {
+      updateHistoryScrollPreference(previousHistory);
+    }
+
     renderApp(root, state);
     const history = root.querySelector<HTMLElement>('[data-chat-history]');
     if (history) {
-      history.scrollTop = history.scrollHeight;
+      applyHistoryScrollPosition(history);
     }
     bindEvents();
   };
@@ -202,7 +248,9 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         getCharsPerSecond: () => state.settings.streamCharsPerSecond,
         onCharacter: (character) => {
           state = appendStreamingReply(state, character);
-          rerender();
+          if (!updateStreamingReplyDom()) {
+            rerender();
+          }
         }
       });
 
@@ -267,6 +315,10 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
   };
 
   const bindEvents = () => {
+    root.querySelector<HTMLElement>('[data-chat-history]')?.addEventListener('scroll', (event) => {
+      updateHistoryScrollPreference(event.currentTarget as HTMLElement);
+    });
+
     const submitCurrentInput = () => {
       const input = root.querySelector<HTMLTextAreaElement>('textarea');
       const value = input?.value.trim();

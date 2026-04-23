@@ -25,6 +25,34 @@ import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
 import { bindUi } from '../../src/ui/bindings';
 
+let historyScrollTopStore = new WeakMap<HTMLElement, number>();
+let historyClientHeight = 0;
+let historyScrollHeight = 0;
+
+Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
+  configurable: true,
+  get() {
+    return historyScrollTopStore.get(this) ?? 0;
+  },
+  set(value: number) {
+    historyScrollTopStore.set(this, value);
+  }
+});
+
+Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-chat-history') ? historyClientHeight : 0;
+  }
+});
+
+Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('data-chat-history') ? historyScrollHeight : 0;
+  }
+});
+
 const flushUi = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -44,6 +72,9 @@ const createDeferred = <T>() => {
 describe('bindUi scene switching', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
+    historyScrollTopStore = new WeakMap<HTMLElement, number>();
+    historyClientHeight = 240;
+    historyScrollHeight = 800;
     requestGeneratedSceneEventMock.mockReset();
     requestStoryReplyStreamMock.mockReset();
     requestEventTimeSettlementMock.mockReset();
@@ -134,6 +165,85 @@ describe('bindUi scene switching', () => {
       })
     );
     await flushUi();
+  });
+
+  it('keeps the chat history position when the user is not at the bottom', async () => {
+    const streamedReplyDeferred = createDeferred<void>();
+
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+    requestStoryReplyStreamMock.mockImplementation(async function* () {
+      yield '第';
+      await streamedReplyDeferred.promise;
+      yield '二';
+    });
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '我想再观察一下。';
+    (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    let history = document.querySelector('[data-chat-history]') as HTMLElement;
+    history.scrollTop = 320;
+    history.dispatchEvent(new Event('scroll'));
+
+    streamedReplyDeferred.resolve();
+    await flushUi();
+
+    history = document.querySelector('[data-chat-history]') as HTMLElement;
+    expect(history.scrollTop).toBe(320);
+  });
+
+  it('keeps the same chat history element while streaming characters', async () => {
+    const streamedReplyDeferred = createDeferred<void>();
+
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+    requestStoryReplyStreamMock.mockImplementation(async function* () {
+      yield '第';
+      await streamedReplyDeferred.promise;
+      yield '二';
+    });
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '我想再观察一下。';
+    (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const historyBeforeNextChar = document.querySelector('[data-chat-history]');
+
+    streamedReplyDeferred.resolve();
+    await flushUi();
+
+    expect(document.querySelector('[data-chat-history]')).toBe(historyBeforeNextChar);
   });
 
   it('opens a separate settings page for stream speed and returns to the game', async () => {
