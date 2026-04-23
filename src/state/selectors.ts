@@ -23,3 +23,27 @@ export const getVisibleActiveEvent = (state: GameState) => {
 
   return activeEvent.sceneId === currentScene.id ? activeEvent : null;
 };
+
+export const getVisiblePreparedEvent = (state: GameState) => {
+  const currentScene = getCurrentScene(state);
+
+  if (!currentScene) {
+    return null;
+  }
+
+  const preparedEvent = state.event.sceneEventCache[currentScene.id];
+
+  if (!preparedEvent || preparedEvent.status !== 'seeded') {
+    return null;
+  }
+
+  if (preparedEvent.snapshot.timeSlot !== state.clock.timeSlot) {
+    return null;
+  }
+
+  if (preparedEvent.snapshot.worldRevision !== state.world.revision) {
+    return null;
+  }
+
+  return preparedEvent;
+};

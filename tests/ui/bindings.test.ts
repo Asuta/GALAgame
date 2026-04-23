@@ -54,7 +54,7 @@ describe('bindUi scene switching', () => {
     });
   });
 
-  it('auto-enters the newly generated current scene even if another scene event was previously active', async () => {
+  it('keeps a generated scene event waiting until the player sends a message', async () => {
     requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
       buildFallbackSceneEvent({
         scene,
@@ -73,13 +73,18 @@ describe('bindUi scene switching', () => {
     await flushUi();
 
     expect(document.body.textContent).toContain('放学后的空教室');
-    expect(document.body.textContent).toContain('事件中');
+    expect(document.body.textContent).toContain('待开场');
+    expect(document.body.textContent).not.toContain('事件中');
+    expect(document.querySelector('[data-action="end-event"]')).toBeNull();
 
-    (document.querySelector('[data-scene-id="hallway"]') as HTMLButtonElement).click();
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '我先看向窗边的人。';
+    (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
     await flushUi();
 
-    expect(document.body.textContent).toContain('风吹过的走廊');
-    expect(document.body.textContent).not.toContain('放学后的空教室');
+    expect(requestStoryReplyStreamMock).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain('事件中');
+    expect(document.querySelector('[data-action="end-event"]')).not.toBeNull();
   });
 
   it('does not end a hidden previous event when leaving a newly selected loading scene', async () => {

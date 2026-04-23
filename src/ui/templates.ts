@@ -1,5 +1,5 @@
 import { worldData } from '../data/world';
-import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEvent } from '../state/selectors';
+import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
 import type { GameState } from '../state/store';
 import { resolveVisualSelection } from '../visual/assetCatalog';
 
@@ -17,6 +17,7 @@ export const createAppMarkup = (state: GameState): string => {
   const activeEvent = getActiveEvent(state);
   const visualSelection = resolveVisualSelection(state);
   const visibleActiveEvent = getVisibleActiveEvent(state);
+  const visiblePreparedEvent = getVisiblePreparedEvent(state);
 
   const regionButtons = worldData.regions
     .map(
@@ -80,6 +81,8 @@ export const createAppMarkup = (state: GameState): string => {
 
   const emptyPrompt = visibleActiveEvent
     ? `【${visibleActiveEvent.title}】\n${visibleActiveEvent.openingState}`
+    : visiblePreparedEvent
+      ? `【${visiblePreparedEvent.title}】\n${visiblePreparedEvent.openingState}`
     : currentSceneError
       ? `事件生成失败：${currentSceneError}`
       : visibleSceneSummary ?? currentScene?.description ?? '选择一个区域，看看接下来会发生什么。';
@@ -122,7 +125,7 @@ export const createAppMarkup = (state: GameState): string => {
           <div class="status-tools">
             <span class="time-pill">${escapeHtml(state.clock.label)}</span>
             <button class="model-toggle" data-action="toggle-model-menu">${escapeHtml(state.settings.currentModel)}</button>
-            <span class="mode-pill">${escapeHtml(visibleActiveEvent ? '事件中' : '探索中')}</span>
+            <span class="mode-pill">${escapeHtml(visibleActiveEvent ? '事件中' : visiblePreparedEvent ? '待开场' : '探索中')}</span>
           </div>
         </header>
         ${state.ui.isModelMenuOpen
@@ -143,7 +146,7 @@ export const createAppMarkup = (state: GameState): string => {
           ${currentRegion ? sceneButtons : regionButtons}
         </div>
         <div class="input-row">
-          <textarea placeholder="进入事件后，在这里输入你想说的话。回车发送，Shift+回车换行。" ${visibleActiveEvent ? '' : 'disabled'}></textarea>
+          <textarea placeholder="输入你想说的话。第一次发送后正式进入事件；回车发送，Shift+回车换行。" ${visibleActiveEvent || visiblePreparedEvent ? '' : 'disabled'}></textarea>
           ${state.ui.isStreamSpeedMenuOpen
             ? `<div class="stream-speed-panel">
                 <div class="stream-speed-header">
@@ -174,7 +177,7 @@ export const createAppMarkup = (state: GameState): string => {
                 ? `<button data-action="end-event" ${!state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>`
                 : '<button data-action="back">离开地点</button>'
             }
-            <button data-action="send" ${visibleActiveEvent && !state.ui.isSending ? '' : 'disabled'}>
+            <button data-action="send" ${(visibleActiveEvent || visiblePreparedEvent) && !state.ui.isSending ? '' : 'disabled'}>
               ${escapeHtml(state.ui.isSending ? '生成中' : '发送')}
             </button>
           </div>

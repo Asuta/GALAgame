@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderApp } from '../../src/ui/renderApp';
-import { appendTranscriptMessage, createInitialState, setSceneSummary, startEvent } from '../../src/state/store';
+import { appendTranscriptMessage, cacheSceneEvent, createInitialState, setSceneSummary, startEvent } from '../../src/state/store';
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
 
@@ -163,6 +163,37 @@ describe('renderApp', () => {
 
     expect(document.querySelector('[data-action="end-event"]')).toBeNull();
     expect(document.querySelector('[data-action="back"]')).not.toBeNull();
+  });
+
+  it('shows a generated scene event as waiting instead of active before the player speaks', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      }
+    };
+    state = cacheSceneEvent(
+      state,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      })
+    );
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('待开场');
+    expect(document.body.textContent).not.toContain('事件中');
+    expect(document.querySelector('[data-action="end-event"]')).toBeNull();
+    expect(document.querySelector('[data-action="back"]')).not.toBeNull();
+    expect(document.querySelector('textarea')?.hasAttribute('disabled')).toBe(false);
   });
 
   it('does not render the internal memory panel for players', () => {

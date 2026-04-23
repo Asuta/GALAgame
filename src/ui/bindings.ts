@@ -1,7 +1,7 @@
 import { worldData } from '../data/world';
 import { requestEventTimeSettlement, requestGeneratedSceneEvent, requestStoryReplyStream, stripEventEndMarker } from '../logic/chatClient';
 import { buildPlayerFacingSceneSummary, summarizeResolvedEvent, compressMemory } from '../logic/memory';
-import { getVisibleActiveEvent } from '../state/selectors';
+import { getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
 import { appendStreamWithRateLimit } from '../logic/streamDisplay';
 import { clampStreamCharsPerSecond, loadStoredSettings, saveStoredSettings } from '../settings/storage';
 import {
@@ -111,13 +111,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     rerender();
 
     if (isSceneEventReusable(state, sceneId)) {
-      const cachedEvent = state.event.sceneEventCache[sceneId];
-
-      if (cachedEvent) {
-        state = startEvent(state, cachedEvent);
-        rerender();
-        return;
-      }
+      rerender();
+      return;
     }
 
     if (state.ui.generatingSceneIds.includes(sceneId)) {
@@ -150,11 +145,6 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       });
 
       state = cacheSceneEvent(state, plannedEvent);
-      const cachedEvent = state.event.sceneEventCache[sceneId];
-
-      if (cachedEvent && state.navigation.currentSceneId === sceneId && !getVisibleActiveEvent(state)) {
-        state = startEvent(state, cachedEvent);
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
       state = setSceneGenerationError(state, sceneId, message);
@@ -166,9 +156,20 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
   };
 
   const runEventTurn = async (playerInput: string, intent: 'continue' | 'end_event') => {
+    const visibleEvent = getVisibleActiveEvent(state);
+    const preparedEvent = intent === 'continue' ? getVisiblePreparedEvent(state) : null;
+
+    if ((!visibleEvent && !preparedEvent) || state.ui.isSending) {
+      return;
+    }
+
+    if (!visibleEvent && preparedEvent) {
+      state = startEvent(state, preparedEvent);
+    }
+
     const activeEvent = getVisibleActiveEvent(state);
 
-    if (!activeEvent || state.ui.isSending) {
+    if (!activeEvent) {
       return;
     }
 
@@ -270,8 +271,9 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       const input = root.querySelector<HTMLTextAreaElement>('textarea');
       const value = input?.value.trim();
       const visibleActiveEvent = getVisibleActiveEvent(state);
+      const visiblePreparedEvent = getVisiblePreparedEvent(state);
 
-      if (!input || !value || !visibleActiveEvent || state.ui.isSending) {
+      if (!input || !value || (!visibleActiveEvent && !visiblePreparedEvent) || state.ui.isSending) {
         return;
       }
 
