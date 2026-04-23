@@ -120,26 +120,32 @@ body {
 }
 
 .dialogue-panel {
+  position: relative;
+  isolation: isolate;
   margin: 0 12px 12px;
   padding: 14px;
   display: grid;
   gap: 12px;
   background:
-    linear-gradient(180deg, rgba(42, 34, 74, 0.72) 0%, rgba(18, 15, 31, 0.82) 100%),
-    url('/assets/ui/dialogue-panel-texture.png'),
-    linear-gradient(180deg, rgba(42, 34, 74, 0.92) 0%, rgba(18, 15, 31, 0.96) 100%),
-    repeating-linear-gradient(
-      0deg,
-      rgba(255, 255, 255, 0.04) 0,
-      rgba(255, 255, 255, 0.04) 1px,
-      transparent 1px,
-      transparent 18px
-    );
-  background-position: center, center, center, center;
-  background-size: cover, 280px 280px, cover, auto;
-  background-repeat: no-repeat, repeat, no-repeat, repeat;
-  background-blend-mode: normal, soft-light, normal, screen;
+    linear-gradient(180deg, rgba(48, 39, 82, 0.94) 0%, rgba(21, 18, 36, 0.98) 100%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 42%);
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.18);
+}
+
+.dialogue-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: url('/assets/ui/dialogue-panel-texture.png') center/320px 320px repeat;
+  opacity: 0.08;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.dialogue-panel > * {
+  position: relative;
+  z-index: 1;
 }
 
 .status-row,

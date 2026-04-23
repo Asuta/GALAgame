@@ -112,7 +112,7 @@ describe('renderApp', () => {
     renderApp(document.querySelector('#app') as HTMLDivElement, state);
 
     expect(document.querySelector('[data-testid="visual-background"]')?.getAttribute('src')).toBe(
-      '/assets/backgrounds/region-school-main.png'
+      '/assets/backgrounds/scene-classroom-main.png'
     );
     expect(document.querySelector('[data-testid="visual-character"]')?.getAttribute('src')).toBe(
       '/assets/characters/lin-cheng-half-body.png'

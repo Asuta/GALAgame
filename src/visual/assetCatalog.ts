@@ -9,6 +9,26 @@ const REGION_BACKGROUNDS = {
 } as const;
 type VisualRegionId = keyof typeof REGION_BACKGROUNDS;
 
+const SCENE_BACKGROUNDS = {
+  classroom: '/assets/backgrounds/scene-classroom-main.png',
+  hallway: '/assets/backgrounds/scene-hallway-main.png',
+  playground: '/assets/backgrounds/scene-playground-main.png',
+  rooftop: '/assets/backgrounds/scene-rooftop-main.png',
+  lobby: '/assets/backgrounds/scene-lobby-main.png',
+  ward: '/assets/backgrounds/scene-ward-main.png',
+  'hospital-hallway': '/assets/backgrounds/scene-hospital-hallway-main.png',
+  'vending-zone': '/assets/backgrounds/scene-vending-zone-main.png',
+  atrium: '/assets/backgrounds/scene-atrium-main.png',
+  cafe: '/assets/backgrounds/scene-cafe-main.png',
+  'cinema-gate': '/assets/backgrounds/scene-cinema-gate-main.png',
+  'accessory-shop': '/assets/backgrounds/scene-accessory-shop-main.png',
+  'living-room': '/assets/backgrounds/scene-living-room-main.png',
+  bedroom: '/assets/backgrounds/scene-bedroom-main.png',
+  balcony: '/assets/backgrounds/scene-balcony-main.png',
+  entryway: '/assets/backgrounds/scene-entryway-main.png'
+} as const;
+type VisualSceneId = keyof typeof SCENE_BACKGROUNDS;
+
 const CHARACTER_PORTRAITS = {
   林澄: '/assets/characters/lin-cheng-half-body.png',
   周然: '/assets/characters/zhou-ran-half-body.png'
@@ -26,6 +46,9 @@ const CITY_MAP_BACKGROUND = '/assets/map/city-overview-main.png';
 
 const isVisualRegionId = (value: string): value is VisualRegionId =>
   value in REGION_BACKGROUNDS;
+
+const isVisualSceneId = (value: string): value is VisualSceneId =>
+  value in SCENE_BACKGROUNDS;
 
 const isVisualCharacterId = (value: string): value is VisualCharacterId =>
   value in CHARACTER_PORTRAITS;
@@ -58,6 +81,7 @@ const resolveCharacterPortrait = (castMember: string | null): string | null => {
 
 export const resolveVisualSelection = (state: GameState): VisualSelection => {
   const regionId = state.navigation.currentRegionId;
+  const sceneId = state.navigation.currentSceneId;
 
   if (!regionId) {
     return {
@@ -74,7 +98,12 @@ export const resolveVisualSelection = (state: GameState): VisualSelection => {
 
   return {
     mode: isEventMode ? 'event' : 'region',
-    background: isVisualRegionId(regionId) ? REGION_BACKGROUNDS[regionId] : CITY_MAP_BACKGROUND,
+    background:
+      sceneId && isVisualSceneId(sceneId)
+        ? SCENE_BACKGROUNDS[sceneId]
+        : isVisualRegionId(regionId)
+          ? REGION_BACKGROUNDS[regionId]
+          : CITY_MAP_BACKGROUND,
     character: isEventMode ? resolveCharacterPortrait(activeCharacterId) : null,
     locationLabel: state.event.activeEvent?.locationLabel ?? region?.name ?? '世界地图'
   };
