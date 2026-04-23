@@ -52,9 +52,66 @@ body {
 }
 
 .visual-stage {
+  position: relative;
+  overflow: hidden;
   height: calc(100% - 28px);
   border-radius: 14px;
-  background: linear-gradient(180deg, #7f7ac8 0%, #403c73 100%);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.18), transparent 42%),
+    linear-gradient(180deg, #7f7ac8 0%, #403c73 100%);
+}
+
+.visual-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent 28%),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.08) 0,
+      rgba(255, 255, 255, 0.08) 2px,
+      transparent 2px,
+      transparent 16px
+    );
+  mix-blend-mode: screen;
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.visual-background,
+.visual-character,
+.visual-shade {
+  position: absolute;
+  inset: 0;
+}
+
+.visual-background {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.visual-character {
+  inset: auto 0 0 auto;
+  width: min(54%, 220px);
+  height: auto;
+  max-height: 92%;
+  object-fit: contain;
+  object-position: bottom right;
+  filter: drop-shadow(0 18px 30px rgba(16, 12, 36, 0.52));
+}
+
+.visual-stage--map .visual-character,
+.visual-stage--region .visual-character {
+  display: none;
+}
+
+.visual-shade {
+  background:
+    linear-gradient(180deg, rgba(15, 16, 32, 0.1) 0%, rgba(15, 16, 32, 0.5) 100%),
+    linear-gradient(0deg, rgba(15, 16, 32, 0.56) 0%, transparent 34%);
+  pointer-events: none;
 }
 
 .visual-label {
@@ -67,6 +124,22 @@ body {
   padding: 14px;
   display: grid;
   gap: 12px;
+  background:
+    linear-gradient(180deg, rgba(42, 34, 74, 0.72) 0%, rgba(18, 15, 31, 0.82) 100%),
+    url('/assets/ui/dialogue-panel-texture.png'),
+    linear-gradient(180deg, rgba(42, 34, 74, 0.92) 0%, rgba(18, 15, 31, 0.96) 100%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.04) 0,
+      rgba(255, 255, 255, 0.04) 1px,
+      transparent 1px,
+      transparent 18px
+    );
+  background-position: center, center, center, center;
+  background-size: cover, 280px 280px, cover, auto;
+  background-repeat: no-repeat, repeat, no-repeat, repeat;
+  background-blend-mode: normal, soft-light, normal, screen;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.18);
 }
 
 .status-row,
@@ -127,7 +200,12 @@ body {
   white-space: pre-wrap;
   display: grid;
   gap: 10px;
+  padding: 12px;
   padding-right: 4px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.08), transparent 36%);
 }
 
 .story-placeholder {
@@ -256,6 +334,11 @@ body {
   resize: none;
   background: rgba(12, 12, 24, 0.5);
   color: white;
+}
+
+.input-row {
+  display: grid;
+  gap: 10px;
 }
 
 .stream-speed-panel {

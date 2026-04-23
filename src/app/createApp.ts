@@ -1,8 +1,6 @@
-import { createPhaserHost } from '../game/createPhaserHost';
 import { createInitialState } from '../state/store';
 import { loadStoredSettings } from '../settings/storage';
 import { bindUi } from '../ui/bindings';
-import { renderApp } from '../ui/renderApp';
 
 export const createApp = (root: HTMLDivElement): void => {
   const storedSettings = loadStoredSettings();
@@ -19,7 +17,5 @@ export const createApp = (root: HTMLDivElement): void => {
     }
   };
 
-  renderApp(root, initialState);
-  createPhaserHost('phaser-root');
   bindUi(root, initialState);
 };

@@ -1,21 +1,37 @@
 import { worldData } from '../data/world';
 import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEvent } from '../state/selectors';
 import type { GameState } from '../state/store';
+import { resolveVisualSelection } from '../visual/assetCatalog';
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
 export const createAppMarkup = (state: GameState): string => {
   const currentRegion = getCurrentRegion(state);
   const currentScene = getCurrentScene(state);
   const activeEvent = getActiveEvent(state);
+  const visualSelection = resolveVisualSelection(state);
   const visibleActiveEvent = getVisibleActiveEvent(state);
 
   const regionButtons = worldData.regions
-    .map((region) => `<button class="choice-button" data-region-id="${region.id}">${region.name}</button>`)
+    .map(
+      (region) =>
+        `<button class="choice-button" data-region-id="${escapeHtml(region.id)}">${escapeHtml(region.name)}</button>`
+    )
     .join('');
 
   const sceneButtons = currentRegion
     ? worldData.scenes
         .filter((scene) => scene.regionId === currentRegion.id)
-        .map((scene) => `<button class="choice-button" data-scene-id="${scene.id}">${scene.name}</button>`)
+        .map(
+          (scene) =>
+            `<button class="choice-button" data-scene-id="${escapeHtml(scene.id)}">${escapeHtml(scene.name)}</button>`
+        )
         .join('')
     : '';
 
@@ -26,8 +42,8 @@ export const createAppMarkup = (state: GameState): string => {
         .map(
           (message) => `
             <div class="chat-message ${message.role}">
-              <div class="chat-label">${message.label}</div>
-              <div class="chat-content">${message.content}</div>
+              <div class="chat-label">${escapeHtml(message.label)}</div>
+              <div class="chat-content">${escapeHtml(message.content)}</div>
             </div>
           `
         )
@@ -38,8 +54,8 @@ export const createAppMarkup = (state: GameState): string => {
     state.event.streamingReply && state.ui.mode === 'event' && visibleActiveEvent
       ? `
         <div class="chat-message character is-streaming">
-          <div class="chat-label">${state.event.streamingLabel || visibleActiveEvent.cast[0] || '角色'}</div>
-          <div class="chat-content">${state.event.streamingReply}<span class="stream-cursor"></span></div>
+          <div class="chat-label">${escapeHtml(state.event.streamingLabel || activeEvent?.cast[0] || '角色')}</div>
+          <div class="chat-content">${escapeHtml(state.event.streamingReply)}<span class="stream-cursor"></span></div>
         </div>
       `
       : '';
@@ -75,20 +91,38 @@ export const createAppMarkup = (state: GameState): string => {
     <div class="phone-frame">
       <section class="visual-panel" data-testid="visual-panel">
         <div class="visual-card">
-          <p class="visual-label">${currentRegion ? currentRegion.name : '世界地图'}</p>
-          <div id="phaser-root" class="visual-stage"></div>
+          <p class="visual-label">${escapeHtml(visualSelection.locationLabel)}</p>
+          <div class="visual-stage visual-stage--${visualSelection.mode}">
+            <img
+              class="visual-background"
+              data-testid="visual-background"
+              src="${escapeHtml(visualSelection.background)}"
+              alt="${escapeHtml(visualSelection.locationLabel)}"
+            />
+            ${
+              visualSelection.character
+                ? `<img
+                    class="visual-character"
+                    data-testid="visual-character"
+                    src="${escapeHtml(visualSelection.character)}"
+                    alt="${escapeHtml(activeEvent?.cast[0] ?? '角色肖像')}"
+                  />`
+                : ''
+            }
+            <div class="visual-shade"></div>
+          </div>
         </div>
       </section>
       <section class="dialogue-panel" data-testid="dialogue-panel">
         <header class="status-row">
           <div>
-            <strong>${currentRegion?.name ?? '城市'}</strong>
-            <span>${currentScene ? ` / ${currentScene.name}` : ''}</span>
+            <strong>${escapeHtml(currentRegion?.name ?? '城市')}</strong>
+            <span>${currentScene ? ` / ${escapeHtml(currentScene.name)}` : ''}</span>
           </div>
           <div class="status-tools">
-            <span class="time-pill">${state.clock.label}</span>
-            <button class="model-toggle" data-action="toggle-model-menu">${state.settings.currentModel}</button>
-            <span class="mode-pill">${visibleActiveEvent ? '事件中' : '探索中'}</span>
+            <span class="time-pill">${escapeHtml(state.clock.label)}</span>
+            <button class="model-toggle" data-action="toggle-model-menu">${escapeHtml(state.settings.currentModel)}</button>
+            <span class="mode-pill">${escapeHtml(visibleActiveEvent ? '事件中' : '探索中')}</span>
           </div>
         </header>
         ${state.ui.isModelMenuOpen
@@ -96,13 +130,13 @@ export const createAppMarkup = (state: GameState): string => {
               ${state.settings.availableModels
                 .map(
                   (model) =>
-                    `<button class="model-option ${model === state.settings.currentModel ? 'is-active' : ''}" data-model-id="${model}">${model}</button>`
+                    `<button class="model-option ${model === state.settings.currentModel ? 'is-active' : ''}" data-model-id="${escapeHtml(model)}">${escapeHtml(model)}</button>`
                 )
                 .join('')}
             </div>`
           : ''}
         <article class="story-box" data-chat-history>
-          ${historyMarkup || loadingPlaceholder || `<div class="story-placeholder">${emptyPrompt}</div>`}
+          ${historyMarkup || loadingPlaceholder || `<div class="story-placeholder">${escapeHtml(emptyPrompt)}</div>`}
           ${streamingMarkup}
         </article>
         <div class="choices">
@@ -138,7 +172,7 @@ export const createAppMarkup = (state: GameState): string => {
             <button data-action="end-event" ${visibleActiveEvent && !state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
             <button data-action="back">离开地点</button>
             <button data-action="send" ${visibleActiveEvent && !state.ui.isSending ? '' : 'disabled'}>
-              ${state.ui.isSending ? '生成中' : '发送'}
+              ${escapeHtml(state.ui.isSending ? '生成中' : '发送')}
             </button>
           </div>
         </div>
