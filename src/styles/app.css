@@ -120,6 +120,77 @@ body {
   pointer-events: none;
 }
 
+.visual-stage--image-generating .visual-background,
+.visual-stage--image-generating .visual-character {
+  filter: saturate(0.78) brightness(0.82) blur(1px);
+}
+
+.visual-stage--image-generating::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background:
+    radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.24), transparent 18%),
+    linear-gradient(115deg, transparent 0%, rgba(157, 231, 255, 0.08) 38%, rgba(255, 255, 255, 0.36) 50%, rgba(177, 119, 255, 0.12) 62%, transparent 100%);
+  mix-blend-mode: screen;
+  opacity: 0.86;
+  pointer-events: none;
+  animation: imageGenerateSweep 1.6s ease-in-out infinite;
+}
+
+.event-image-generating-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.08) 0,
+      rgba(255, 255, 255, 0.08) 1px,
+      transparent 1px,
+      transparent 34px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(151, 213, 255, 0.08) 0,
+      rgba(151, 213, 255, 0.08) 1px,
+      transparent 1px,
+      transparent 30px
+    ),
+    radial-gradient(circle at 50% 50%, rgba(129, 98, 255, 0.16), transparent 46%);
+  opacity: 0.72;
+  animation: imageGeneratePulse 1.25s ease-in-out infinite alternate;
+}
+
+.event-image-generating-overlay span {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 18px rgba(133, 232, 255, 0.88);
+  animation: imageGenerateSpark 1.35s ease-in-out infinite;
+}
+
+.event-image-generating-overlay span:nth-child(1) {
+  left: 18%;
+  top: 28%;
+}
+
+.event-image-generating-overlay span:nth-child(2) {
+  right: 24%;
+  top: 38%;
+  animation-delay: 0.32s;
+}
+
+.event-image-generating-overlay span:nth-child(3) {
+  left: 46%;
+  bottom: 26%;
+  animation-delay: 0.62s;
+}
+
 .event-image-refresh-button {
   position: absolute;
   right: 14px;
@@ -138,6 +209,36 @@ body {
   cursor: pointer;
   box-shadow: 0 12px 26px rgba(13, 9, 32, 0.38);
   backdrop-filter: blur(12px);
+}
+
+.event-image-prompt-button {
+  position: absolute;
+  right: 19px;
+  bottom: 66px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(29, 22, 62, 0.66);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(13, 9, 32, 0.34);
+  backdrop-filter: blur(12px);
+}
+
+.event-image-prompt-button:hover:not(:disabled) {
+  background: rgba(112, 87, 255, 0.82);
+  transform: translateY(-1px);
+}
+
+.event-image-prompt-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .event-image-refresh-button:hover:not(:disabled) {
@@ -568,6 +669,14 @@ body {
   margin-top: 4px;
 }
 
+.image-prompt-card p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
 .mode-pill {
   padding: 4px 10px;
   border-radius: 999px;
@@ -669,4 +778,49 @@ body {
   background: #8a74ff;
   color: white;
   cursor: pointer;
+}
+
+@keyframes imageGenerateSweep {
+  0% {
+    transform: translateX(-78%) skewX(-10deg);
+  }
+  48% {
+    transform: translateX(0%) skewX(-10deg);
+  }
+  100% {
+    transform: translateX(78%) skewX(-10deg);
+  }
+}
+
+@keyframes imageGeneratePulse {
+  from {
+    opacity: 0.48;
+  }
+  to {
+    opacity: 0.82;
+  }
+}
+
+@keyframes imageGenerateSpark {
+  0%,
+  100% {
+    transform: scale(0.5);
+    opacity: 0.2;
+  }
+  45% {
+    transform: scale(1.6);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visual-stage--image-generating::after,
+  .event-image-generating-overlay,
+  .event-image-generating-overlay span {
+    animation: none;
+  }
+
+  .event-image-generating-overlay {
+    opacity: 0.58;
+  }
 }

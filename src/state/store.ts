@@ -13,7 +13,7 @@ export interface GameState {
     currentSceneId: string | null;
   };
   ui: {
-    currentPage: 'game' | 'settings' | 'event-details';
+    currentPage: 'game' | 'settings' | 'event-details' | 'image-prompt';
     mode: Mode;
     isModelMenuOpen: boolean;
     isStreamSpeedMenuOpen: boolean;
@@ -44,6 +44,7 @@ export interface GameState {
     activeEvent: GeneratedEvent | null;
     sceneEventCache: Record<string, GeneratedEvent>;
     generatedImages: Record<string, string>;
+    generatedImagePrompts: Record<string, string>;
     transcript: TranscriptMessage[];
     streamingReply: string;
     streamingLabel: string;
@@ -174,6 +175,7 @@ export const createInitialState = (): GameState => ({
     activeEvent: null,
     sceneEventCache: {},
     generatedImages: {},
+    generatedImagePrompts: {},
     transcript: [],
     streamingReply: '',
     streamingLabel: '',
@@ -402,7 +404,7 @@ export const startEventImageGeneration = (state: GameState, eventId: string): Ga
   }
 });
 
-export const finishEventImageGeneration = (state: GameState, eventId: string, imageUrl: string): GameState => ({
+export const finishEventImageGeneration = (state: GameState, eventId: string, imageUrl: string, prompt = ''): GameState => ({
   ...state,
   ui: {
     ...state.ui,
@@ -417,6 +419,10 @@ export const finishEventImageGeneration = (state: GameState, eventId: string, im
     generatedImages: {
       ...state.event.generatedImages,
       [eventId]: imageUrl
+    },
+    generatedImagePrompts: {
+      ...state.event.generatedImagePrompts,
+      ...(prompt.trim() ? { [eventId]: prompt.trim() } : {})
     }
   }
 });
@@ -458,6 +464,7 @@ export const endEvent = (state: GameState): GameState => {
           }
         : state.event.sceneEventCache,
       generatedImages: state.event.generatedImages,
+      generatedImagePrompts: state.event.generatedImagePrompts,
       transcript: [],
       streamingReply: '',
       streamingLabel: '',
@@ -566,6 +573,16 @@ export const openEventDetailsPage = (state: GameState): GameState => ({
   ui: {
     ...state.ui,
     currentPage: 'event-details',
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false
+  }
+});
+
+export const openImagePromptPage = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    currentPage: 'image-prompt',
     isModelMenuOpen: false,
     isStreamSpeedMenuOpen: false
   }

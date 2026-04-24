@@ -9,6 +9,7 @@ import {
   findCharacterScene,
   enterRegion,
   enterScene,
+  finishEventImageGeneration,
   finishStreamingReply,
   invalidateSceneEventCache,
   isSceneEventReusable,
@@ -238,5 +239,14 @@ describe('store transitions', () => {
     expect(state.clock.minute).toBe(35);
     expect(state.clock.label).toBe('傍晚 18:35');
     expect(state.clock.timeSlot).toBe('evening');
+  });
+
+  it('stores the latest generated image prompt with the generated image', () => {
+    let state = createInitialState();
+
+    state = finishEventImageGeneration(state, 'event-1', 'https://example.com/image.png', '竖屏教室窗边 CG');
+
+    expect(state.event.generatedImages['event-1']).toBe('https://example.com/image.png');
+    expect(state.event.generatedImagePrompts['event-1']).toBe('竖屏教室窗边 CG');
   });
 });

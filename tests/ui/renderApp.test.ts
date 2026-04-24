@@ -6,6 +6,7 @@ import {
   createInitialState,
   failEventImageGeneration,
   finishEventImageGeneration,
+  openImagePromptPage,
   setSceneSummary,
   startEvent,
   startEventImageGeneration
@@ -149,7 +150,7 @@ describe('renderApp', () => {
       timeSlot: state.clock.timeSlot
     });
     state = startEvent(state, event);
-    state = finishEventImageGeneration(state, event.id, 'https://example.com/event.png');
+    state = finishEventImageGeneration(state, event.id, 'https://example.com/event.png', '\u56fa\u5b9a\u63d0\u793a\u8bcd\uff1a\u7a97\u8fb9\u5bf9\u89c6');
 
     document.body.innerHTML = '<div id="app"></div>';
     renderApp(document.querySelector('#app') as HTMLDivElement, state);
@@ -158,6 +159,40 @@ describe('renderApp', () => {
       'https://example.com/event.png'
     );
     expect(document.querySelector('[data-testid="visual-character"]')).toBeNull();
+    const promptButton = document.querySelector('[data-action="open-image-prompt"]') as HTMLButtonElement;
+    expect(promptButton.closest('.visual-stage')).not.toBeNull();
+    expect(promptButton.classList.contains('event-image-prompt-button')).toBe(true);
+    expect(promptButton.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('renders the latest generated image prompt page', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      }
+    };
+    const event = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '\u5b66\u6821 / \u6559\u5ba4',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+    state = startEvent(state, event);
+    state = finishEventImageGeneration(state, event.id, 'https://example.com/event.png', '\u56fa\u5b9a\u63d0\u793a\u8bcd\uff1a\u7a97\u8fb9\u5bf9\u89c6');
+    state = openImagePromptPage(state);
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-testid="image-prompt-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('\u4e0a\u6b21\u751f\u56fe\u63d0\u793a\u8bcd');
+    expect(document.body.textContent).toContain('\u56fa\u5b9a\u63d0\u793a\u8bcd\uff1a\u7a97\u8fb9\u5bf9\u89c6');
+    expect(document.body.textContent).toContain('\u4e0a\u6b21\u751f\u56fe\u63d0\u793a\u8bcd');
   });
 
   it('shows image generation progress and errors on the event image button', () => {
@@ -182,7 +217,10 @@ describe('renderApp', () => {
     document.body.innerHTML = '<div id="app"></div>';
     renderApp(document.querySelector('#app') as HTMLDivElement, state);
     const loadingButton = document.querySelector('[data-action="generate-event-image"]');
-    expect(loadingButton?.closest('.visual-stage')).not.toBeNull();
+    const visualStage = loadingButton?.closest('.visual-stage');
+    expect(visualStage).not.toBeNull();
+    expect(visualStage?.classList.contains('visual-stage--image-generating')).toBe(true);
+    expect(document.querySelector('[data-testid="event-image-generating-overlay"]')).not.toBeNull();
     expect(loadingButton?.classList.contains('event-image-refresh-button')).toBe(true);
     expect(loadingButton?.classList.contains('is-loading')).toBe(true);
     expect(loadingButton?.getAttribute('aria-label')).toBe('正在生成事件图');
@@ -272,6 +310,9 @@ describe('renderApp', () => {
     expect(document.querySelector('[data-action="continue-story"]')).toBeNull();
     expect(document.querySelector('[data-action="back"]')).not.toBeNull();
     expect(document.querySelector('textarea')?.hasAttribute('disabled')).toBe(false);
+    expect(document.querySelector('[data-testid="visual-character"]')?.getAttribute('src')).toBe(
+      '/assets/characters/lin-cheng-half-body.png'
+    );
   });
 
   it('does not render the internal memory panel for players', () => {

@@ -110,15 +110,15 @@ export const resolveVisualSelection = (state: GameState): VisualSelection => {
   }
 
   const region = worldData.regions.find((item) => item.id === regionId) ?? null;
-  const isEventMode = state.ui.mode === 'event';
   const visualEvent = state.event.activeEvent ?? getVisiblePreparedEvent(state);
+  const isEventVisual = !!visualEvent;
   const activeCharacterId = visualEvent?.cast[0] ?? null;
   const generatedEventImage = visualEvent ? (state.event.generatedImages[visualEvent.id] ?? null) : null;
 
   return {
-    mode: isEventMode ? 'event' : 'region',
+    mode: isEventVisual ? 'event' : 'region',
     background: generatedEventImage ?? resolveSceneBackground(sceneId, regionId),
-    character: isEventMode && !generatedEventImage ? resolveCharacterPortrait(activeCharacterId) : null,
+    character: isEventVisual && !generatedEventImage ? resolveCharacterPortrait(activeCharacterId) : null,
     locationLabel: visualEvent?.locationLabel ?? region?.name ?? '世界地图',
     isGeneratedEventImage: !!generatedEventImage
   };

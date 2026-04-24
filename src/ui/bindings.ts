@@ -30,6 +30,7 @@ import {
   markEventReadyToEnd,
   closeSettingsPage,
   openEventDetailsPage,
+  openImagePromptPage,
   openSettingsPage,
   recordWorldAdvance,
   selectSceneEventSeed,
@@ -382,7 +383,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         memoryFacts: state.memory.facts,
         referenceImageUrls
       });
-      state = finishEventImageGeneration(state, eventForImage.id, imageUrl);
+      state = finishEventImageGeneration(state, eventForImage.id, imageUrl, imagePrompt);
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
       state = failEventImageGeneration(state, eventForImage.id, message);
@@ -458,6 +459,11 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     root.querySelector<HTMLButtonElement>('[data-action="generate-event-image"]')?.addEventListener('click', () => {
       void generateCurrentEventImage();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="open-image-prompt"]')?.addEventListener('click', () => {
+      state = openImagePromptPage(state);
+      rerender();
     });
 
     root.querySelector<HTMLInputElement>('[data-stream-speed-slider]')?.addEventListener('change', (event) => {
