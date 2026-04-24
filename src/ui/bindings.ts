@@ -20,6 +20,7 @@ import {
   isSceneEventReusable,
   markEventReadyToEnd,
   closeSettingsPage,
+  openEventDetailsPage,
   openSettingsPage,
   recordWorldAdvance,
   selectSceneEventSeed,
@@ -371,6 +372,11 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     root.querySelector<HTMLButtonElement>('[data-action="open-settings"]')?.addEventListener('click', () => {
       state = openSettingsPage(state);
+      rerender();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="open-event-details"]')?.addEventListener('click', () => {
+      state = openEventDetailsPage(state);
       rerender();
     });
 

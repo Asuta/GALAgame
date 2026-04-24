@@ -11,6 +11,33 @@ const escapeHtml = (value: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+const renderDetailRow = (label: string, value: string): string => `
+  <div class="event-detail-row">
+    <dt>${escapeHtml(label)}</dt>
+    <dd>${escapeHtml(value || '暂无')}</dd>
+  </div>
+`;
+
+const renderDetailList = (label: string, values: string[]): string => `
+  <div class="event-detail-row">
+    <dt>${escapeHtml(label)}</dt>
+    <dd>
+      ${
+        values.length
+          ? `<ul class="event-detail-list">${values.map((value) => `<li>${escapeHtml(value)}</li>`).join('')}</ul>`
+          : '暂无'
+      }
+    </dd>
+  </div>
+`;
+
+const phaseLabels = {
+  opening: '开场',
+  build_up: '推进',
+  overlimit: '越界',
+  resolution: '收束'
+};
+
 export const createAppMarkup = (state: GameState): string => {
   const currentRegion = getCurrentRegion(state);
   const currentScene = getCurrentScene(state);
@@ -73,6 +100,7 @@ export const createAppMarkup = (state: GameState): string => {
   const visibleSceneSummary =
     currentScene && state.ui.sceneSummary.sceneId === currentScene.id ? state.ui.sceneSummary.content : null;
   const currentSceneError = currentScene ? state.ui.sceneGenerationErrors[currentScene.id] : null;
+  const detailEvent = visibleActiveEvent ?? visiblePreparedEvent ?? (currentScene ? state.event.sceneEventCache[currentScene.id] : null);
 
   const loadingPlaceholder =
     currentScene && state.ui.generatingSceneIds.includes(currentScene.id) && !visibleActiveEvent
@@ -157,6 +185,62 @@ export const createAppMarkup = (state: GameState): string => {
     `;
   }
 
+  if (state.ui.currentPage === 'event-details') {
+    return `
+      <div class="phone-frame phone-frame--settings">
+        <section class="settings-page event-details-page" data-testid="event-details-page">
+          <header class="settings-header">
+            <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
+            <div>
+              <p>生成事件</p>
+              <h1>事件详情</h1>
+            </div>
+          </header>
+          <div class="event-details-scroll">
+          ${
+            detailEvent
+              ? `
+                <div class="settings-card event-detail-summary">
+                  <div>
+                    <p>${escapeHtml(detailEvent.locationLabel)}</p>
+                    <h2>${escapeHtml(detailEvent.title)}</h2>
+                  </div>
+                  <div class="event-detail-pills">
+                    <span class="time-pill">${escapeHtml(detailEvent.snapshot.timeLabel)}</span>
+                    <span class="mode-pill">${escapeHtml(detailEvent.status)}</span>
+                    <span class="phase-pill">${escapeHtml(phaseLabels[detailEvent.currentPhase])}</span>
+                  </div>
+                </div>
+                <dl class="settings-card event-detail-list-card">
+                  ${renderDetailRow('事件 ID', detailEvent.id)}
+                  ${renderDetailRow('所在场景', detailEvent.sceneId)}
+                  ${renderDetailList('登场角色', detailEvent.cast)}
+                  ${renderDetailRow('事件前提', detailEvent.premise)}
+                  ${renderDetailRow('开场状态', detailEvent.openingState)}
+                  ${renderDetailRow('推进目标', detailEvent.buildUpGoal)}
+                  ${renderDetailRow('越界触发', detailEvent.overlimitTrigger)}
+                  ${renderDetailRow('收束方向', detailEvent.resolutionDirection)}
+                  ${renderDetailList('悬念线索', detailEvent.suspenseThreads)}
+                  ${renderDetailList('事实记录', detailEvent.facts)}
+                  ${renderDetailList('阶段历史', detailEvent.phaseHistory.map((phase) => phaseLabels[phase]))}
+                  ${renderDetailRow('生成时世界版本', String(detailEvent.snapshot.worldRevision))}
+                  ${renderDetailRow('生成时记忆摘要', detailEvent.snapshot.memorySummary)}
+                  ${renderDetailList('生成时记忆事实', detailEvent.snapshot.memoryFacts)}
+                </dl>
+              `
+              : `
+                <div class="settings-card event-detail-empty">
+                  <h2>${currentScene ? '事件还没有生成完成' : '还没有选中场景'}</h2>
+                  <p>${currentSceneError ? `事件生成失败：${escapeHtml(currentSceneError)}` : '回到场景中，等待事件生成完成后，就能在这里查看完整信息列表。'}</p>
+                </div>
+              `
+          }
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
   return `
     <div class="phone-frame">
       <section class="visual-panel" data-testid="visual-panel">
@@ -206,6 +290,7 @@ export const createAppMarkup = (state: GameState): string => {
           <textarea placeholder="输入你想说的话。第一次发送后正式进入事件；回车发送，Shift+回车换行。" ${visibleActiveEvent || visiblePreparedEvent ? '' : 'disabled'}></textarea>
           <div class="action-row">
             <button data-action="open-settings">设置</button>
+            <button data-action="open-event-details" ${currentScene || visibleActiveEvent ? '' : 'disabled'}>事件详情</button>
             ${
               visibleActiveEvent
                 ? `

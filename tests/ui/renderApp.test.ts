@@ -250,6 +250,47 @@ describe('renderApp', () => {
     expect(document.querySelector('[data-stream-speed-slider]')).not.toBeNull();
   });
 
+  it('renders generated event details on a separate page', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      },
+      ui: {
+        ...state.ui,
+        currentPage: 'event-details' as const
+      }
+    };
+    state = cacheSceneEvent(
+      state,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: state.memory.summary,
+        memoryFacts: ['玩家刚进入教室。'],
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      })
+    );
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-testid="event-details-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('事件详情');
+    expect(document.body.textContent).toContain('学校 / 教室');
+    expect(document.body.textContent).toContain('事件前提');
+    expect(document.body.textContent).toContain('开场状态');
+    expect(document.body.textContent).toContain('推进目标');
+    expect(document.body.textContent).toContain('越界触发');
+    expect(document.body.textContent).toContain('收束方向');
+    expect(document.body.textContent).toContain('生成时记忆事实');
+    expect(document.body.textContent).toContain('玩家刚进入教室。');
+    expect(document.querySelector('[data-action="back-to-game"]')).not.toBeNull();
+  });
+
   it('renders model options on the settings page and removes the main-page model toggle button', () => {
     const settingsState = {
       ...createInitialState(),
