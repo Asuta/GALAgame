@@ -58,7 +58,7 @@ export const createAppMarkup = (state: GameState): string => {
       ? `
         <div class="chat-message character is-streaming">
           <div class="chat-label">${escapeHtml(state.event.streamingLabel || activeEvent?.cast[0] || '角色')}</div>
-          <div class="chat-content">${escapeHtml(state.event.streamingReply)}<span class="stream-cursor"></span></div>
+          <div class="chat-content" data-streaming-content>${escapeHtml(state.event.streamingReply)}<span class="stream-cursor"></span></div>
         </div>
       `
       : '';
