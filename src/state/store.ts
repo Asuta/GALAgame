@@ -24,6 +24,11 @@ export interface GameState {
       sceneId: string | null;
       content: string | null;
     };
+    eventImageGeneration: {
+      eventId: string | null;
+      isGenerating: boolean;
+      error: string | null;
+    };
   };
   clock: {
     hour: number;
@@ -38,6 +43,7 @@ export interface GameState {
   event: {
     activeEvent: GeneratedEvent | null;
     sceneEventCache: Record<string, GeneratedEvent>;
+    generatedImages: Record<string, string>;
     transcript: TranscriptMessage[];
     streamingReply: string;
     streamingLabel: string;
@@ -147,6 +153,11 @@ export const createInitialState = (): GameState => ({
     sceneSummary: {
       sceneId: null,
       content: null
+    },
+    eventImageGeneration: {
+      eventId: null,
+      isGenerating: false,
+      error: null
     }
   },
   clock: {
@@ -162,6 +173,7 @@ export const createInitialState = (): GameState => ({
   event: {
     activeEvent: null,
     sceneEventCache: {},
+    generatedImages: {},
     transcript: [],
     streamingReply: '',
     streamingLabel: '',
@@ -378,6 +390,49 @@ export const startEvent = (state: GameState, event: GeneratedEvent): GameState =
   };
 };
 
+export const startEventImageGeneration = (state: GameState, eventId: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    eventImageGeneration: {
+      eventId,
+      isGenerating: true,
+      error: null
+    }
+  }
+});
+
+export const finishEventImageGeneration = (state: GameState, eventId: string, imageUrl: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    eventImageGeneration: {
+      eventId,
+      isGenerating: false,
+      error: null
+    }
+  },
+  event: {
+    ...state.event,
+    generatedImages: {
+      ...state.event.generatedImages,
+      [eventId]: imageUrl
+    }
+  }
+});
+
+export const failEventImageGeneration = (state: GameState, eventId: string, error: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    eventImageGeneration: {
+      eventId,
+      isGenerating: false,
+      error
+    }
+  }
+});
+
 export const endEvent = (state: GameState): GameState => {
   const resolvedEvent = state.event.activeEvent
     ? {
@@ -402,6 +457,7 @@ export const endEvent = (state: GameState): GameState => {
             [resolvedEvent.sceneId]: resolvedEvent
           }
         : state.event.sceneEventCache,
+      generatedImages: state.event.generatedImages,
       transcript: [],
       streamingReply: '',
       streamingLabel: '',

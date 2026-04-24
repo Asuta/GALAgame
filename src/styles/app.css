@@ -108,7 +108,8 @@ body {
 }
 
 .visual-stage--map .visual-character,
-.visual-stage--region .visual-character {
+.visual-stage--region .visual-character,
+.visual-stage--event-generated .visual-character {
   display: none;
 }
 
@@ -117,6 +118,40 @@ body {
     linear-gradient(180deg, rgba(15, 16, 32, 0.1) 0%, rgba(15, 16, 32, 0.5) 100%),
     linear-gradient(0deg, rgba(15, 16, 32, 0.56) 0%, transparent 34%);
   pointer-events: none;
+}
+
+.event-image-refresh-button {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 999px;
+  background: rgba(29, 22, 62, 0.72);
+  color: #fff;
+  font-size: 1.65rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 12px 26px rgba(13, 9, 32, 0.38);
+  backdrop-filter: blur(12px);
+}
+
+.event-image-refresh-button:hover:not(:disabled) {
+  background: rgba(112, 87, 255, 0.86);
+  transform: translateY(-1px);
+}
+
+.event-image-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.78;
+}
+
+.event-image-refresh-button.is-loading span {
+  animation: refreshSpin 1s linear infinite;
 }
 
 .visual-label {
@@ -315,6 +350,18 @@ body {
   background: #8a74ff;
   color: white;
   cursor: pointer;
+}
+
+@keyframes refreshSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.event-image-error {
+  margin-top: 8px;
+  color: #ffd1d1;
+  font-size: 0.86rem;
 }
 
 .input-row textarea {

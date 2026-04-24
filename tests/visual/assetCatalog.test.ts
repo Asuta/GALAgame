@@ -35,7 +35,8 @@ describe('resolveVisualSelection', () => {
       mode: 'map',
       background: '/assets/map/city-overview-main.png',
       character: null,
-      locationLabel: '世界地图'
+      locationLabel: '世界地图',
+      isGeneratedEventImage: false
     });
   });
 
@@ -47,7 +48,8 @@ describe('resolveVisualSelection', () => {
       mode: 'region',
       background: '/assets/backgrounds/region-school-main.png',
       character: null,
-      locationLabel: '学校'
+      locationLabel: '学校',
+      isGeneratedEventImage: false
     });
   });
 
@@ -60,7 +62,8 @@ describe('resolveVisualSelection', () => {
       mode: 'region',
       background: '/assets/backgrounds/scene-playground-main.png',
       character: null,
-      locationLabel: '学校'
+      locationLabel: '学校',
+      isGeneratedEventImage: false
     });
   });
 
@@ -96,7 +99,8 @@ describe('resolveVisualSelection', () => {
       mode: 'event',
       background: '/assets/backgrounds/scene-classroom-main.png',
       character: '/assets/characters/lin-cheng-half-body.png',
-      locationLabel: '学校 / 教室'
+      locationLabel: '学校 / 教室',
+      isGeneratedEventImage: false
     });
   });
 
@@ -129,10 +133,46 @@ describe('resolveVisualSelection', () => {
         mode: 'event',
         background: '/assets/backgrounds/scene-classroom-main.png',
         character: '/assets/characters/lin-cheng-half-body.png',
-        locationLabel: '学校 / 教室'
+        locationLabel: '学校 / 教室',
+        isGeneratedEventImage: false
       });
     } finally {
       character.name = originalName;
     }
   });
+
+  it('uses a generated event image as the full visual without a character overlay', () => {
+    let state = createInitialState();
+    state = enterRegion(state, 'school');
+    state = enterScene(state, 'classroom');
+
+    const event = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = startEvent(state, event);
+    state = {
+      ...state,
+      event: {
+        ...state.event,
+        generatedImages: {
+          [event.id]: 'https://example.com/event.png'
+        }
+      }
+    };
+
+    expect(resolveVisualSelection(state)).toEqual({
+      mode: 'event',
+      background: 'https://example.com/event.png',
+      character: null,
+      locationLabel: '学校 / 教室',
+      isGeneratedEventImage: true
+    });
+  });
 });
+

@@ -1,5 +1,12 @@
 import { worldData } from '../data/world';
-import { requestEventTimeSettlement, requestGeneratedSceneEvent, requestStoryReplyStream, stripEventEndMarker } from '../logic/chatClient';
+import { requestGeneratedEventImage } from '../logic/imageClient';
+import {
+  requestEventImagePrompt,
+  requestEventTimeSettlement,
+  requestGeneratedSceneEvent,
+  requestStoryReplyStream,
+  stripEventEndMarker
+} from '../logic/chatClient';
 import { buildPlayerFacingSceneSummary, summarizeResolvedEvent, compressMemory } from '../logic/memory';
 import { getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
 import { appendStreamWithRateLimit } from '../logic/streamDisplay';
@@ -15,6 +22,8 @@ import {
   enterRegion,
   enterScene,
   failStreamingReply,
+  failEventImageGeneration,
+  finishEventImageGeneration,
   finishStreamingReply,
   invalidateSceneEventCache,
   isSceneEventReusable,
@@ -29,6 +38,7 @@ import {
   setCurrentModel,
   startSceneGeneration,
   setStreamCharsPerSecond,
+  startEventImageGeneration,
   startEvent,
   startStreamingReply,
   updateMemory,
@@ -36,6 +46,7 @@ import {
   type GameState
 } from '../state/store';
 import { renderApp } from './renderApp';
+import { resolveCharacterReference, resolveSceneBackground } from '../visual/assetCatalog';
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;
 
@@ -330,6 +341,56 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     rerender();
   };
 
+  const generateCurrentEventImage = async () => {
+    const eventForImage = getVisibleActiveEvent(state) ?? getVisiblePreparedEvent(state);
+
+    if (!eventForImage || state.ui.eventImageGeneration.isGenerating) {
+      return;
+    }
+
+    const scene = worldData.scenes.find((item) => item.id === eventForImage.sceneId) ?? null;
+    const referenceImageUrls = [
+      resolveSceneBackground(eventForImage.sceneId, state.navigation.currentRegionId),
+      resolveCharacterReference(eventForImage.cast[0] ?? null)
+    ].filter((url): url is string => !!url);
+
+    state = startEventImageGeneration(state, eventForImage.id);
+    rerender();
+
+    try {
+      const transcript = state.event.transcript.map((message) => `${message.label}：${message.content}`);
+      const imagePrompt = await requestEventImagePrompt({
+        model: state.settings.currentModel,
+        locationLabel: eventForImage.locationLabel,
+        eventTitle: eventForImage.title,
+        castName: eventForImage.cast[0] || '旁白',
+        eventPhase: eventForImage.currentPhase,
+        sceneDescription: scene?.description ?? eventForImage.premise,
+        openingState: eventForImage.openingState,
+        eventFacts: eventForImage.facts,
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        transcript
+      });
+      const imageUrl = await requestGeneratedEventImage({
+        event: eventForImage,
+        scene,
+        locationLabel: eventForImage.locationLabel,
+        prompt: imagePrompt,
+        transcript,
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        referenceImageUrls
+      });
+      state = finishEventImageGeneration(state, eventForImage.id, imageUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      state = failEventImageGeneration(state, eventForImage.id, message);
+    }
+
+    rerender();
+  };
+
   const bindEvents = () => {
     root.querySelector<HTMLElement>('[data-chat-history]')?.addEventListener('scroll', (event) => {
       updateHistoryScrollPreference(event.currentTarget as HTMLElement);
@@ -393,6 +454,10 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       }
 
       void runEventTurn(CONTINUE_STORY_PROMPT, 'continue');
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="generate-event-image"]')?.addEventListener('click', () => {
+      void generateCurrentEventImage();
     });
 
     root.querySelector<HTMLInputElement>('[data-stream-speed-slider]')?.addEventListener('change', (event) => {
