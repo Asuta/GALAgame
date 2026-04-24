@@ -309,7 +309,6 @@ describe('bindUi scene switching', () => {
 
   it('reveals the full current streaming bubble immediately when clicked', async () => {
     const streamStep = createDeferred<void>();
-
     requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
       buildFallbackSceneEvent({
         scene,
@@ -348,5 +347,44 @@ describe('bindUi scene switching', () => {
 
     expect(document.querySelector('[data-streaming-bubble]')).toBeNull();
     expect(document.body.textContent).toContain('旁白：你刚想开口，她却先一步把后半句也说完了。');
+  });
+
+  it('continues the active event without player text when continue-story is clicked', async () => {
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+    requestStoryReplyStreamMock
+      .mockImplementationOnce(async function* () {})
+      .mockImplementationOnce(async function* (input) {
+        expect(input.intent).toBe('continue');
+        expect(input.playerInput).toContain('玩家暂时没有回应');
+        yield '旁白：她轻轻抬眼。';
+        yield '林晚：嗯？';
+      });
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '我先不说话，只是看着她。';
+    (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
+    await flushUi();
+    (document.querySelector('[data-action="continue-story"]') as HTMLButtonElement).click();
+    await flushUi();
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
+    await flushUi();
+
+    expect(requestStoryReplyStreamMock).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).toContain('旁白：她轻轻抬眼。林晚：');
   });
 });

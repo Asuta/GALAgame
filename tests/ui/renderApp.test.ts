@@ -147,6 +147,7 @@ describe('renderApp', () => {
     renderApp(document.querySelector('#app') as HTMLDivElement, state);
 
     expect(document.querySelector('[data-action="end-event"]')).not.toBeNull();
+    expect(document.querySelector('[data-action="continue-story"]')).not.toBeNull();
     expect(document.querySelector('[data-action="back"]')).toBeNull();
     expect(document.querySelectorAll('[data-scene-id]')).toHaveLength(0);
   });
@@ -165,6 +166,7 @@ describe('renderApp', () => {
     renderApp(document.querySelector('#app') as HTMLDivElement, state);
 
     expect(document.querySelector('[data-action="end-event"]')).toBeNull();
+    expect(document.querySelector('[data-action="continue-story"]')).toBeNull();
     expect(document.querySelector('[data-action="back"]')).not.toBeNull();
   });
 
@@ -195,6 +197,7 @@ describe('renderApp', () => {
     expect(document.body.textContent).toContain('待开场');
     expect(document.body.textContent).not.toContain('事件中');
     expect(document.querySelector('[data-action="end-event"]')).toBeNull();
+    expect(document.querySelector('[data-action="continue-story"]')).toBeNull();
     expect(document.querySelector('[data-action="back"]')).not.toBeNull();
     expect(document.querySelector('textarea')?.hasAttribute('disabled')).toBe(false);
   });

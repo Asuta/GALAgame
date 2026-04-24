@@ -90,6 +90,8 @@ const persistSettings = (state: GameState): void => {
   });
 };
 
+const CONTINUE_STORY_PROMPT = '玩家暂时没有回应，只是在等待、观察和感受当前气氛。请根据当前场景自然推进一小段剧情，然后停在等待玩家选择或回应的位置。';
+
 export const bindUi = (root: HTMLDivElement, initialState = createInitialState()): void => {
   let state: GameState = applyStoredSettings(initialState);
   let shouldAutoScrollHistory = true;
@@ -367,6 +369,16 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     root.querySelector<HTMLButtonElement>('[data-action="back-to-game"]')?.addEventListener('click', () => {
       state = closeSettingsPage(state);
       rerender();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="continue-story"]')?.addEventListener('click', () => {
+      const visibleActiveEvent = getVisibleActiveEvent(state);
+
+      if (!visibleActiveEvent || state.ui.isSending) {
+        return;
+      }
+
+      void runEventTurn(CONTINUE_STORY_PROMPT, 'continue');
     });
 
     root.querySelector<HTMLInputElement>('[data-stream-speed-slider]')?.addEventListener('change', (event) => {
