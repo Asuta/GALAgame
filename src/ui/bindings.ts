@@ -91,12 +91,13 @@ const persistSettings = (state: GameState): void => {
 };
 
 const CONTINUE_STORY_PROMPT = '玩家暂时没有回应，只是在等待、观察和感受当前气氛。请根据当前场景自然推进一小段剧情，然后停在等待玩家选择或回应的位置。';
+const STREAM_REVEAL_BOOST_CHARS = 10;
 
 export const bindUi = (root: HTMLDivElement, initialState = createInitialState()): void => {
   let state: GameState = applyStoredSettings(initialState);
   let shouldAutoScrollHistory = true;
   let preservedHistoryScrollTop = 0;
-  let shouldSkipCurrentStreamAnimation = false;
+  let streamRevealBoostCharacters = 0;
 
   const updateHistoryScrollPreference = (history: HTMLElement): void => {
     const maxScrollTop = Math.max(history.scrollHeight - history.clientHeight, 0);
@@ -227,7 +228,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       label: '你',
       content: intent === 'end_event' ? '我准备结束这段对话，离开这里。' : playerInput
     });
-    shouldSkipCurrentStreamAnimation = false;
+    streamRevealBoostCharacters = 0;
     state = startStreamingReply(state, activeEvent.cast[0] || '角色');
     rerender();
 
@@ -250,7 +251,14 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
           intent
         }),
         getCharsPerSecond: () => state.settings.streamCharsPerSecond,
-        shouldSkipRateLimit: () => shouldSkipCurrentStreamAnimation,
+        shouldSkipRateLimit: () => {
+          if (streamRevealBoostCharacters <= 0) {
+            return false;
+          }
+
+          streamRevealBoostCharacters -= 1;
+          return true;
+        },
         onCharacter: (character) => {
           state = appendStreamingReply(state, character);
           if (!updateStreamingReplyDom()) {
@@ -315,7 +323,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       const message = error instanceof Error ? error.message : '未知错误';
       state = failStreamingReply(state, message);
     } finally {
-      shouldSkipCurrentStreamAnimation = false;
+      streamRevealBoostCharacters = 0;
     }
 
     rerender();
@@ -430,7 +438,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         return;
       }
 
-      shouldSkipCurrentStreamAnimation = true;
+      streamRevealBoostCharacters += STREAM_REVEAL_BOOST_CHARS;
     };
 
     root.querySelector<HTMLElement>('[data-streaming-bubble]')?.addEventListener('click', () => {

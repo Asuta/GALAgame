@@ -26,26 +26,33 @@ describe('appendStreamWithRateLimit', () => {
     expect(sleep).toHaveBeenCalledWith(1000);
   });
 
-  it('reveals the remaining text immediately after stream skipping is requested', async () => {
+  it('reveals only the requested boosted characters before returning to the speed limit', async () => {
     const rendered: string[] = [];
     const sleep = vi.fn(async (_ms: number) => {});
-    let shouldSkip = false;
+    let boostedCharacters = 0;
 
     await appendStreamWithRateLimit({
-      source: createSource(['你好世界']),
+      source: createSource(['你好世界呀']),
       getCharsPerSecond: () => 1,
-      shouldSkipRateLimit: () => shouldSkip,
+      shouldSkipRateLimit: () => {
+        if (boostedCharacters <= 0) {
+          return false;
+        }
+
+        boostedCharacters -= 1;
+        return true;
+      },
       onCharacter: (character) => {
         rendered.push(character);
         if (character === '好') {
-          shouldSkip = true;
+          boostedCharacters = 2;
         }
       },
       sleep
     });
 
-    expect(rendered).toEqual(['你', '好', '世', '界']);
-    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(rendered).toEqual(['你', '好', '世', '界', '呀']);
+    expect(sleep).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledWith(1000);
   });
 });
