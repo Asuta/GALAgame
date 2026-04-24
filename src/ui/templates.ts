@@ -151,6 +151,20 @@ export const createAppMarkup = (state: GameState): string => {
   const eventImageErrorMarkup = eventImageError
     ? `<div class="event-image-error" role="alert">出图失败：${escapeHtml(eventImageError)}</div>`
     : '';
+  const latestImagePrompt = visibleEventForImage ? (state.event.generatedImagePrompts[visibleEventForImage.id] ?? '') : '';
+  const imagePromptButton = visibleEventForImage
+    ? `
+      <button
+        class="event-image-prompt-button"
+        data-action="open-image-prompt"
+        aria-label="查看上一次生图提示词"
+        title="查看上一次生图提示词"
+        ${latestImagePrompt ? '' : 'disabled'}
+      >
+        <span aria-hidden="true">i</span>
+      </button>
+    `
+    : '';
 
   if (state.ui.currentPage === 'settings') {
     return `
@@ -266,12 +280,39 @@ export const createAppMarkup = (state: GameState): string => {
     `;
   }
 
+  if (state.ui.currentPage === 'image-prompt') {
+    return `
+      <div class="phone-frame phone-frame--settings">
+        <section class="settings-page event-details-page" data-testid="image-prompt-page">
+          <header class="settings-header">
+            <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
+            <div>
+              <p>生成图片</p>
+              <h1>上次生图提示词</h1>
+            </div>
+          </header>
+          <div class="event-details-scroll">
+            <div class="settings-card event-detail-summary">
+              <div>
+                <p>${escapeHtml(visibleEventForImage?.locationLabel ?? currentScene?.name ?? '当前场景')}</p>
+                <h2>${escapeHtml(visibleEventForImage?.title ?? '暂无生成事件')}</h2>
+              </div>
+            </div>
+            <div class="settings-card image-prompt-card">
+              <p>${escapeHtml(latestImagePrompt || '还没有生成过图片。回到场景后点击右下角刷新按钮生成一次图片，就能在这里查看最新提示词。')}</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
   return `
     <div class="phone-frame">
       <section class="visual-panel" data-testid="visual-panel">
         <div class="visual-card">
           <p class="visual-label">${escapeHtml(visualSelection.locationLabel)}</p>
-          <div class="visual-stage visual-stage--${visualSelection.mode}${visualSelection.isGeneratedEventImage ? ' visual-stage--event-generated' : ''}">
+          <div class="visual-stage visual-stage--${visualSelection.mode}${visualSelection.isGeneratedEventImage ? ' visual-stage--event-generated' : ''}${isGeneratingEventImage ? ' visual-stage--image-generating' : ''}">
             <img
               class="visual-background"
               data-testid="visual-background"
@@ -289,6 +330,18 @@ export const createAppMarkup = (state: GameState): string => {
                 : ''
             }
             <div class="visual-shade"></div>
+            ${
+              isGeneratingEventImage
+                ? `
+                  <div class="event-image-generating-overlay" data-testid="event-image-generating-overlay" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                `
+                : ''
+            }
+            ${imagePromptButton}
             ${eventImageButton}
           </div>
         </div>

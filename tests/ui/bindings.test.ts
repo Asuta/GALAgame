@@ -457,6 +457,16 @@ describe('bindUi scene switching', () => {
       'https://example.com/generated-event.png'
     );
     expect(document.querySelector('[data-testid="visual-character"]')).toBeNull();
+
+    const promptButton = document.querySelector('[data-action="open-image-prompt"]') as HTMLButtonElement;
+    expect(promptButton).not.toBeNull();
+    expect(promptButton.hasAttribute('disabled')).toBe(false);
+    promptButton.click();
+    await flushUi();
+
+    expect(document.querySelector('[data-testid="image-prompt-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('\u4e0a\u6b21\u751f\u56fe\u63d0\u793a\u8bcd');
+    expect(document.body.textContent).toContain('\u751f\u6210\u7684\u56fa\u5b9a\u751f\u56fe\u63d0\u793a\u8bcd\uff1a\u5f53\u524d\u5979\u628a\u7ec3\u4e60\u518c\u5408\u4e0a\uff0c\u7a97\u8fb9\u4e24\u4eba\u5bf9\u89c6\u3002');
   });
 
   it('passes the latest transcript into event image prompt generation', async () => {

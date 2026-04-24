@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { worldData } from '../../src/data/world';
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
-import { createInitialState, enterRegion, enterScene, startEvent } from '../../src/state/store';
+import { cacheSceneEvent, createInitialState, enterRegion, enterScene, startEvent } from '../../src/state/store';
 import { resolveVisualSelection } from '../../src/visual/assetCatalog';
 
 describe('resolveVisualSelection', () => {
@@ -94,6 +94,32 @@ describe('resolveVisualSelection', () => {
     });
 
     state = startEvent(state, event);
+
+    expect(resolveVisualSelection(state)).toEqual({
+      mode: 'event',
+      background: '/assets/backgrounds/scene-classroom-main.png',
+      character: '/assets/characters/lin-cheng-half-body.png',
+      locationLabel: '学校 / 教室',
+      isGeneratedEventImage: false
+    });
+  });
+
+  it('returns the prepared event character portrait before the player starts the event', () => {
+    let state = createInitialState();
+    state = enterRegion(state, 'school');
+    state = enterScene(state, 'classroom');
+
+    state = cacheSceneEvent(
+      state,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      })
+    );
 
     expect(resolveVisualSelection(state)).toEqual({
       mode: 'event',
