@@ -94,6 +94,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
   let state: GameState = applyStoredSettings(initialState);
   let shouldAutoScrollHistory = true;
   let preservedHistoryScrollTop = 0;
+  let shouldSkipCurrentStreamAnimation = false;
 
   const updateHistoryScrollPreference = (history: HTMLElement): void => {
     const maxScrollTop = Math.max(history.scrollHeight - history.clientHeight, 0);
@@ -224,6 +225,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       label: '你',
       content: intent === 'end_event' ? '我准备结束这段对话，离开这里。' : playerInput
     });
+    shouldSkipCurrentStreamAnimation = false;
     state = startStreamingReply(state, activeEvent.cast[0] || '角色');
     rerender();
 
@@ -246,6 +248,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
           intent
         }),
         getCharsPerSecond: () => state.settings.streamCharsPerSecond,
+        shouldSkipRateLimit: () => shouldSkipCurrentStreamAnimation,
         onCharacter: (character) => {
           state = appendStreamingReply(state, character);
           if (!updateStreamingReplyDom()) {
@@ -309,6 +312,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
       state = failStreamingReply(state, message);
+    } finally {
+      shouldSkipCurrentStreamAnimation = false;
     }
 
     rerender();
@@ -406,6 +411,27 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     root.querySelector<HTMLButtonElement>('[data-action="send"]')?.addEventListener('click', async () => {
       submitCurrentInput();
+    });
+
+    const revealCurrentStream = () => {
+      if (!state.ui.isSending || !state.event.streamingReply) {
+        return;
+      }
+
+      shouldSkipCurrentStreamAnimation = true;
+    };
+
+    root.querySelector<HTMLElement>('[data-streaming-bubble]')?.addEventListener('click', () => {
+      revealCurrentStream();
+    });
+
+    root.querySelector<HTMLElement>('[data-streaming-bubble]')?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+
+      event.preventDefault();
+      revealCurrentStream();
     });
 
     root.querySelector<HTMLTextAreaElement>('textarea')?.addEventListener('keydown', (event) => {

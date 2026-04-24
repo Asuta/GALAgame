@@ -25,4 +25,27 @@ describe('appendStreamWithRateLimit', () => {
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(sleep).toHaveBeenCalledWith(1000);
   });
+
+  it('reveals the remaining text immediately after stream skipping is requested', async () => {
+    const rendered: string[] = [];
+    const sleep = vi.fn(async (_ms: number) => {});
+    let shouldSkip = false;
+
+    await appendStreamWithRateLimit({
+      source: createSource(['你好世界']),
+      getCharsPerSecond: () => 1,
+      shouldSkipRateLimit: () => shouldSkip,
+      onCharacter: (character) => {
+        rendered.push(character);
+        if (character === '好') {
+          shouldSkip = true;
+        }
+      },
+      sleep
+    });
+
+    expect(rendered).toEqual(['你', '好', '世', '界']);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
 });
