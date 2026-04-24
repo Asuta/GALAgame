@@ -208,7 +208,10 @@ export const createAppMarkup = (state: GameState): string => {
             <button data-action="open-settings">设置</button>
             ${
               visibleActiveEvent
-                ? `<button data-action="end-event" ${!state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>`
+                ? `
+                  <button data-action="continue-story" ${!state.ui.isSending ? '' : 'disabled'}>继续剧情</button>
+                  <button data-action="end-event" ${!state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
+                `
                 : '<button data-action="back">离开地点</button>'
             }
             <button data-action="send" ${(visibleActiveEvent || visiblePreparedEvent) && !state.ui.isSending ? '' : 'disabled'}>
