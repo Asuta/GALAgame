@@ -5,7 +5,7 @@
 - Style: anime mobile romance game illustration
 - Mood: soft evening light, modern campus love story, delicate and restrained
 - Palette: pink-purple-blue dusk tones, warm indoor highlights
-- Framing: mobile portrait friendly, safe negative space for UI overlays
+- Framing: vertical portrait game background friendly, safe negative space for UI overlays, no phone/device frame or screen mockup
 
 ## Character Prompt: Lin Cheng
 
@@ -21,7 +21,7 @@ Anime romance adventure world map for a mobile visual novel, stylized city overv
 
 ## Region Prompt Pattern
 
-Anime romance visual novel background, modern [REGION] environment, soft atmospheric lighting, delicate detail, empty scene prepared for character overlay, mobile portrait composition, clean focal depth, no people, no text, no watermark
+Anime romance visual novel background, modern [REGION] environment, soft atmospheric lighting, delicate detail, empty scene prepared for character overlay, vertical portrait game background composition, clean focal depth, no people, no text, no watermark, no phone, no smartphone, no device frame, no screen mockup, no camera notch
 
 ## UI Texture Prompt
 
