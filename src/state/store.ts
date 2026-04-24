@@ -13,7 +13,7 @@ export interface GameState {
     currentSceneId: string | null;
   };
   ui: {
-    currentPage: 'game' | 'settings';
+    currentPage: 'game' | 'settings' | 'event-details';
     mode: Mode;
     isModelMenuOpen: boolean;
     isStreamSpeedMenuOpen: boolean;
@@ -500,6 +500,16 @@ export const openSettingsPage = (state: GameState): GameState => ({
   ui: {
     ...state.ui,
     currentPage: 'settings',
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false
+  }
+});
+
+export const openEventDetailsPage = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    currentPage: 'event-details',
     isModelMenuOpen: false,
     isStreamSpeedMenuOpen: false
   }
