@@ -1,20 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  requestGeneratedEventImageMock,
+  requestEventImagePromptMock,
   requestGeneratedSceneEventMock,
   requestStoryReplyStreamMock,
   requestEventTimeSettlementMock
 } = vi.hoisted(() => ({
+  requestGeneratedEventImageMock: vi.fn(),
+  requestEventImagePromptMock: vi.fn(),
   requestGeneratedSceneEventMock: vi.fn(),
   requestStoryReplyStreamMock: vi.fn(),
   requestEventTimeSettlementMock: vi.fn()
 }));
+
+vi.mock('../../src/logic/imageClient', async () => {
+  const actual = await vi.importActual<typeof import('../../src/logic/imageClient')>('../../src/logic/imageClient');
+
+  return {
+    ...actual,
+    requestGeneratedEventImage: requestGeneratedEventImageMock
+  };
+});
 
 vi.mock('../../src/logic/chatClient', async () => {
   const actual = await vi.importActual<typeof import('../../src/logic/chatClient')>('../../src/logic/chatClient');
 
   return {
     ...actual,
+    requestEventImagePrompt: requestEventImagePromptMock,
     requestGeneratedSceneEvent: requestGeneratedSceneEventMock,
     requestStoryReplyStream: requestStoryReplyStreamMock,
     requestEventTimeSettlement: requestEventTimeSettlementMock
@@ -24,6 +38,7 @@ vi.mock('../../src/logic/chatClient', async () => {
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
 import { bindUi } from '../../src/ui/bindings';
+import { appendTranscriptMessage, createInitialState, startEvent } from '../../src/state/store';
 
 let historyScrollTopStore = new WeakMap<HTMLElement, number>();
 let historyClientHeight = 0;
@@ -64,13 +79,19 @@ const waitForStreamTick = async () => {
   });
 };
 
+const waitForStreamFrame = async () => {
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 80);
+  });
+};
+
 const waitForText = async (text: string) => {
-  for (let index = 0; index < 20; index += 1) {
+  for (let index = 0; index < 40; index += 1) {
     if (document.body.textContent?.includes(text)) {
       return;
     }
 
-    await waitForStreamTick();
+    await waitForStreamFrame();
     await flushUi();
   }
 
@@ -94,6 +115,8 @@ describe('bindUi scene switching', () => {
     historyScrollTopStore = new WeakMap<HTMLElement, number>();
     historyClientHeight = 240;
     historyScrollHeight = 800;
+    requestGeneratedEventImageMock.mockReset();
+    requestEventImagePromptMock.mockReset();
     requestGeneratedSceneEventMock.mockReset();
     requestStoryReplyStreamMock.mockReset();
     requestEventTimeSettlementMock.mockReset();
@@ -102,6 +125,8 @@ describe('bindUi scene switching', () => {
       minutesElapsed: 20,
       summary: '这次事件过去了二十分钟。'
     });
+    requestGeneratedEventImageMock.mockResolvedValue('https://example.com/generated-event.png');
+    requestEventImagePromptMock.mockResolvedValue('生成的固定生图提示词：当前她把练习册合上，窗边两人对视。');
   });
 
   it('keeps a generated scene event waiting until the player sends a message', async () => {
@@ -386,5 +411,122 @@ describe('bindUi scene switching', () => {
 
     expect(requestStoryReplyStreamMock).toHaveBeenCalledTimes(2);
     expect(document.body.textContent).toContain('旁白：她轻轻抬眼。林晚：');
+  });
+
+  it('generates an event image from the waiting event and uses it as the visual background', async () => {
+    const imageDeferred = createDeferred<string>();
+    requestGeneratedEventImageMock.mockReturnValueOnce(imageDeferred.promise);
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const generateButton = document.querySelector('[data-action="generate-event-image"]') as HTMLButtonElement;
+    expect(generateButton).not.toBeNull();
+    expect(generateButton.closest('.visual-stage')).not.toBeNull();
+    generateButton.click();
+    await flushUi();
+    expect(document.querySelector('[data-action="generate-event-image"]')?.classList.contains('is-loading')).toBe(true);
+    imageDeferred.resolve('https://example.com/generated-event.png');
+    await flushUi();
+
+    expect(requestGeneratedEventImageMock).toHaveBeenCalledOnce();
+    expect(requestEventImagePromptMock).toHaveBeenCalledOnce();
+    expect(requestEventImagePromptMock.mock.calls[0][0].eventTitle).toContain('放学后的空教室');
+    expect(requestGeneratedEventImageMock.mock.calls[0][0].event.cast).toContain('林澄');
+    expect(requestGeneratedEventImageMock.mock.calls[0][0].transcript).toEqual([]);
+    expect(requestGeneratedEventImageMock.mock.calls[0][0].memorySummary).toContain('你刚开始');
+    expect(requestGeneratedEventImageMock.mock.calls[0][0].prompt).toContain('生成的固定生图提示词');
+    expect(requestGeneratedEventImageMock.mock.calls[0][0].referenceImageUrls).toEqual([
+      '/assets/backgrounds/scene-classroom-main.png',
+      '/assets/characters/lin-cheng-half-body.png'
+    ]);
+    expect(document.querySelector('[data-testid="visual-background"]')?.getAttribute('src')).toBe(
+      'https://example.com/generated-event.png'
+    );
+    expect(document.querySelector('[data-testid="visual-character"]')).toBeNull();
+  });
+
+  it('passes the latest transcript into event image prompt generation', async () => {
+    let initialState = createInitialState();
+    initialState = {
+      ...initialState,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      }
+    };
+    initialState = startEvent(
+      initialState,
+      buildFallbackSceneEvent({
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        memorySummary: initialState.memory.summary,
+        memoryFacts: initialState.memory.facts,
+        timeLabel: initialState.clock.label,
+        timeSlot: initialState.clock.timeSlot
+      })
+    );
+    initialState = appendTranscriptMessage(initialState, {
+      role: 'player',
+      label: '你',
+      content: '你看起来有点心事。'
+    });
+    initialState = appendTranscriptMessage(initialState, {
+      role: 'character',
+      label: '林澄',
+      content: '旁白：她把练习册轻轻合上。'
+    });
+
+    bindUi(document.querySelector('#app') as HTMLDivElement, initialState);
+
+    (document.querySelector('[data-action="generate-event-image"]') as HTMLButtonElement).click();
+    await flushUi();
+    await flushUi();
+
+    const promptInput = requestEventImagePromptMock.mock.calls[0][0];
+    const imageInput = requestGeneratedEventImageMock.mock.calls[0][0];
+    expect(promptInput.transcript).toContain('你：你看起来有点心事。');
+    expect(promptInput.transcript.join('\n')).toContain('旁白：她把练习册轻轻合上。');
+    expect(imageInput.prompt).toContain('生成的固定生图提示词');
+  });
+
+  it('shows an event image generation error without blocking story controls', async () => {
+    requestGeneratedEventImageMock.mockRejectedValueOnce(new Error('图片额度不足'));
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    (document.querySelector('[data-action="generate-event-image"]') as HTMLButtonElement).click();
+    await flushUi();
+    await flushUi();
+
+    expect(document.body.textContent).toContain('出图失败：图片额度不足');
+    expect(document.querySelector('[data-action="send"]')?.hasAttribute('disabled')).toBe(false);
   });
 });

@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderApp } from '../../src/ui/renderApp';
-import { appendTranscriptMessage, cacheSceneEvent, createInitialState, setSceneSummary, startEvent } from '../../src/state/store';
+import {
+  appendTranscriptMessage,
+  cacheSceneEvent,
+  createInitialState,
+  failEventImageGeneration,
+  finishEventImageGeneration,
+  setSceneSummary,
+  startEvent,
+  startEventImageGeneration
+} from '../../src/state/store';
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
 
@@ -120,6 +129,69 @@ describe('renderApp', () => {
       '/assets/characters/lin-cheng-half-body.png'
     );
     expect(document.body.textContent).toContain('学校 / 教室');
+  });
+
+  it('renders a generated event image as the full visual and hides the portrait overlay', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      }
+    };
+    const event = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+    state = startEvent(state, event);
+    state = finishEventImageGeneration(state, event.id, 'https://example.com/event.png');
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-testid="visual-background"]')?.getAttribute('src')).toBe(
+      'https://example.com/event.png'
+    );
+    expect(document.querySelector('[data-testid="visual-character"]')).toBeNull();
+  });
+
+  it('shows image generation progress and errors on the event image button', () => {
+    let state = createInitialState();
+    state = {
+      ...state,
+      navigation: {
+        currentRegionId: 'school',
+        currentSceneId: 'classroom'
+      }
+    };
+    const event = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = startEventImageGeneration(startEvent(state, event), event.id);
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+    const loadingButton = document.querySelector('[data-action="generate-event-image"]');
+    expect(loadingButton?.closest('.visual-stage')).not.toBeNull();
+    expect(loadingButton?.classList.contains('event-image-refresh-button')).toBe(true);
+    expect(loadingButton?.classList.contains('is-loading')).toBe(true);
+    expect(loadingButton?.getAttribute('aria-label')).toBe('正在生成事件图');
+    expect(loadingButton?.hasAttribute('disabled')).toBe(true);
+
+    state = failEventImageGeneration(state, event.id, '接口超时');
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+    expect(document.querySelector('[data-action="generate-event-image"]')?.getAttribute('aria-label')).toBe('重新生成事件图');
+    expect(document.body.textContent).toContain('出图失败：接口超时');
   });
 
   it('shows only the event-ending action during an active event', () => {

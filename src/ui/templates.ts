@@ -126,6 +126,31 @@ export const createAppMarkup = (state: GameState): string => {
 
   const streamSpeedHint =
     state.settings.streamCharsPerSecond <= 4 ? '慢' : state.settings.streamCharsPerSecond >= 12 ? '快' : '默认';
+  const visibleEventForImage = visibleActiveEvent ?? visiblePreparedEvent;
+  const isGeneratingEventImage =
+    !!visibleEventForImage &&
+    state.ui.eventImageGeneration.eventId === visibleEventForImage.id &&
+    state.ui.eventImageGeneration.isGenerating;
+  const eventImageError =
+    visibleEventForImage && state.ui.eventImageGeneration.eventId === visibleEventForImage.id
+      ? state.ui.eventImageGeneration.error
+      : null;
+  const eventImageButton = visibleEventForImage
+    ? `
+      <button
+        class="event-image-refresh-button ${isGeneratingEventImage ? 'is-loading' : ''}"
+        data-action="generate-event-image"
+        aria-label="${escapeHtml(isGeneratingEventImage ? '正在生成事件图' : '重新生成事件图')}"
+        title="${escapeHtml(isGeneratingEventImage ? '正在生成事件图' : '重新生成事件图')}"
+        ${isGeneratingEventImage ? 'disabled' : ''}
+      >
+        <span aria-hidden="true">↻</span>
+      </button>
+    `
+    : '';
+  const eventImageErrorMarkup = eventImageError
+    ? `<div class="event-image-error" role="alert">出图失败：${escapeHtml(eventImageError)}</div>`
+    : '';
 
   if (state.ui.currentPage === 'settings') {
     return `
@@ -246,7 +271,7 @@ export const createAppMarkup = (state: GameState): string => {
       <section class="visual-panel" data-testid="visual-panel">
         <div class="visual-card">
           <p class="visual-label">${escapeHtml(visualSelection.locationLabel)}</p>
-          <div class="visual-stage visual-stage--${visualSelection.mode}">
+          <div class="visual-stage visual-stage--${visualSelection.mode}${visualSelection.isGeneratedEventImage ? ' visual-stage--event-generated' : ''}">
             <img
               class="visual-background"
               data-testid="visual-background"
@@ -264,6 +289,7 @@ export const createAppMarkup = (state: GameState): string => {
                 : ''
             }
             <div class="visual-shade"></div>
+            ${eventImageButton}
           </div>
         </div>
       </section>
@@ -281,6 +307,7 @@ export const createAppMarkup = (state: GameState): string => {
         </header>
         <article class="story-box" data-chat-history>
           ${historyMarkup || loadingPlaceholder || `<div class="story-placeholder">${escapeHtml(emptyPrompt)}</div>`}
+          ${eventImageErrorMarkup}
           ${streamingMarkup}
         </article>
         <div class="choices">

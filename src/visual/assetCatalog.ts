@@ -1,4 +1,5 @@
 import { worldData } from '../data/world';
+import { getVisiblePreparedEvent } from '../state/selectors';
 import type { GameState } from '../state/store';
 
 const REGION_BACKGROUNDS = {
@@ -40,6 +41,7 @@ export interface VisualSelection {
   background: string;
   character: string | null;
   locationLabel: string;
+  isGeneratedEventImage: boolean;
 }
 
 const CITY_MAP_BACKGROUND = '/assets/map/city-overview-main.png';
@@ -79,6 +81,20 @@ const resolveCharacterPortrait = (castMember: string | null): string | null => {
   return null;
 };
 
+export const resolveSceneBackground = (sceneId: string | null, regionId: string | null): string => {
+  if (sceneId && isVisualSceneId(sceneId)) {
+    return SCENE_BACKGROUNDS[sceneId];
+  }
+
+  if (regionId && isVisualRegionId(regionId)) {
+    return REGION_BACKGROUNDS[regionId];
+  }
+
+  return CITY_MAP_BACKGROUND;
+};
+
+export const resolveCharacterReference = (castMember: string | null): string | null => resolveCharacterPortrait(castMember);
+
 export const resolveVisualSelection = (state: GameState): VisualSelection => {
   const regionId = state.navigation.currentRegionId;
   const sceneId = state.navigation.currentSceneId;
@@ -88,23 +104,22 @@ export const resolveVisualSelection = (state: GameState): VisualSelection => {
       mode: 'map',
       background: CITY_MAP_BACKGROUND,
       character: null,
-      locationLabel: '世界地图'
+      locationLabel: '世界地图',
+      isGeneratedEventImage: false
     };
   }
 
   const region = worldData.regions.find((item) => item.id === regionId) ?? null;
   const isEventMode = state.ui.mode === 'event';
-  const activeCharacterId = state.event.activeEvent?.cast[0] ?? null;
+  const visualEvent = state.event.activeEvent ?? getVisiblePreparedEvent(state);
+  const activeCharacterId = visualEvent?.cast[0] ?? null;
+  const generatedEventImage = visualEvent ? (state.event.generatedImages[visualEvent.id] ?? null) : null;
 
   return {
     mode: isEventMode ? 'event' : 'region',
-    background:
-      sceneId && isVisualSceneId(sceneId)
-        ? SCENE_BACKGROUNDS[sceneId]
-        : isVisualRegionId(regionId)
-          ? REGION_BACKGROUNDS[regionId]
-          : CITY_MAP_BACKGROUND,
-    character: isEventMode ? resolveCharacterPortrait(activeCharacterId) : null,
-    locationLabel: state.event.activeEvent?.locationLabel ?? region?.name ?? '世界地图'
+    background: generatedEventImage ?? resolveSceneBackground(sceneId, regionId),
+    character: isEventMode && !generatedEventImage ? resolveCharacterPortrait(activeCharacterId) : null,
+    locationLabel: visualEvent?.locationLabel ?? region?.name ?? '世界地图',
+    isGeneratedEventImage: !!generatedEventImage
   };
 };

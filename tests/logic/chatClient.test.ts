@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildChatRequest,
+  buildEventImagePromptRequest,
   buildEventPlanRequest,
   buildEventTimeSettlementRequest,
   buildFallbackSceneEvent,
@@ -9,6 +10,7 @@ import {
   parseEventTimeSettlement,
   parsePlannedSceneEvent,
   parseSseDelta,
+  requestEventImagePrompt,
   requestEventTimeSettlement,
   requestGeneratedSceneEvent,
   requestStoryReply,
@@ -66,6 +68,29 @@ describe('chatClient helpers', () => {
     });
 
     expect(text).toContain('她抬头看着你');
+  });
+
+  it('builds a chat request that condenses current context into an image prompt', () => {
+    const payload = buildEventImagePromptRequest({
+      model: 'deepseek-chat',
+      systemPrompt: '你是生图提示词导演。',
+      locationLabel: '学校 / 教室',
+      eventTitle: '放学后的空教室',
+      castName: '林澄',
+      eventPhase: 'build_up',
+      sceneDescription: '傍晚的教室里只剩窗边座位。',
+      openingState: '她一个人坐在窗边。',
+      eventFacts: ['林澄把练习册合上'],
+      memorySummary: '你们刚建立一点信任。',
+      memoryFacts: ['她不太愿意直接说出心事'],
+      transcript: ['你：你看起来有点心事。', '林澄：只是有点冷。']
+    });
+
+    expect(payload.model).toBe('deepseek-chat');
+    expect(payload.messages[0].content).toContain('只输出最终生图提示词');
+    expect(payload.messages[1].content).toContain('学校 / 教室');
+    expect(payload.messages[1].content).toContain('林澄把练习册合上');
+    expect(payload.messages[1].content).toContain('你：你看起来有点心事。');
   });
 
   it('uses the provided model name as request target', () => {
@@ -274,6 +299,37 @@ describe('chatClient helpers', () => {
         eventFacts: ['剧情阶段进入build_up']
       })
     ).rejects.toThrow('模型请求失败：500');
+  });
+
+  it('requests a condensed event image prompt from the chat model', async () => {
+    vi.stubEnv('VITE_CHAT_COMPLETIONS_URL', CHAT_ENV.VITE_CHAT_COMPLETIONS_URL);
+    vi.stubEnv('VITE_CHAT_API_KEY', CHAT_ENV.VITE_CHAT_API_KEY);
+    vi.stubEnv('VITE_CHAT_MODEL', CHAT_ENV.VITE_CHAT_MODEL);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: '竖屏视觉小说 CG，林澄在傍晚教室窗边合上练习册。' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    );
+
+    await expect(
+      requestEventImagePrompt({
+        model: 'deepseek-chat',
+        locationLabel: '学校 / 教室',
+        eventTitle: '放学后的空教室',
+        castName: '林澄',
+        eventPhase: 'build_up',
+        sceneDescription: '傍晚的教室里只剩窗边座位。',
+        openingState: '她一个人坐在窗边。',
+        eventFacts: ['林澄把练习册合上'],
+        memorySummary: '你们刚建立一点信任。',
+        memoryFacts: [],
+        transcript: ['你：你看起来有点心事。']
+      })
+    ).resolves.toContain('林澄');
   });
 
   it('throws when streaming reply request fails', async () => {

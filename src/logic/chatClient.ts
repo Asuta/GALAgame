@@ -89,6 +89,21 @@ export interface BuildEventTimeSettlementRequestInput {
   eventFacts: string[];
 }
 
+export interface BuildEventImagePromptRequestInput {
+  model: string;
+  systemPrompt: string;
+  locationLabel: string;
+  eventTitle: string;
+  castName: string;
+  eventPhase: EventPhase;
+  sceneDescription: string;
+  openingState: string;
+  eventFacts: string[];
+  memorySummary: string;
+  memoryFacts: string[];
+  transcript: string[];
+}
+
 export interface BuildFallbackTimeSettlementInput {
   transcript: string[];
   eventFacts: string[];
@@ -293,6 +308,54 @@ export const buildFallbackSceneEvent = ({
     turnCount: 0
   };
 };
+
+export const buildEventImagePromptRequest = ({
+  model,
+  systemPrompt,
+  locationLabel,
+  eventTitle,
+  castName,
+  eventPhase,
+  sceneDescription,
+  openingState,
+  eventFacts,
+  memorySummary,
+  memoryFacts,
+  transcript
+}: BuildEventImagePromptRequestInput): ChatRequestPayload => ({
+  model,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        systemPrompt,
+        '你只输出最终生图提示词，不要解释，不要 JSON，不要 Markdown。',
+        '提示词必须描述当前剧情这一刻的可视画面，而不是复述所有上下文。',
+        '必须保留地点、主要角色、当前动作/距离/情绪、构图、光影和画风要求。',
+        '不要生成文字、UI、水印、logo。'
+      ].join('\n')
+    },
+    {
+      role: 'user',
+      content: [
+        `地点：${locationLabel}`,
+        `事件标题：${eventTitle}`,
+        `主要角色：${castName || '无固定角色'}`,
+        `当前阶段：${eventPhase}`,
+        `场景描述：${sceneDescription}`,
+        `事件开场：${openingState}`,
+        `当前事件事实：${eventFacts.length ? eventFacts.join('；') : '暂无'}`,
+        `世界记忆摘要：${memorySummary || '暂无'}`,
+        `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        `最近对话：\n${transcript.length ? transcript.slice(-10).join('\n') : '暂无'}`,
+        '',
+        '请把以上上下文浓缩成一个适合文生图/图生图的中文提示词。',
+        '提示词需要像导演分镜一样明确“此刻画面”，可以补充合理动作和表情，但不要加入上下文没有支撑的新剧情。',
+        '输出一段完整提示词，长度控制在 300 字以内。'
+      ].join('\n')
+    }
+  ]
+});
 
 export const buildFallbackTimeSettlement = ({
   transcript,
@@ -535,6 +598,33 @@ export const requestEventTimeSettlement = async (
   const data = (await response.json()) as ChatCompletionResponse;
   const text = extractAssistantReply(data);
   return parseEventTimeSettlement(text);
+};
+
+export const requestEventImagePrompt = async (
+  input: Omit<BuildEventImagePromptRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
+): Promise<string> => {
+  const config = getChatRuntimeConfig();
+  const payload = buildEventImagePromptRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是视觉小说游戏的生图提示词导演，负责把剧情上下文整理成稳定、具体、可执行的图片生成提示词。'
+  });
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`生图提示词生成失败：${response.status}`);
+  }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  return extractAssistantReply(data);
 };
 
 export async function* requestStoryReplyStream(
