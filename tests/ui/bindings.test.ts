@@ -58,6 +58,25 @@ const flushUi = async () => {
   await Promise.resolve();
 };
 
+const waitForStreamTick = async () => {
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+};
+
+const waitForText = async (text: string) => {
+  for (let index = 0; index < 20; index += 1) {
+    if (document.body.textContent?.includes(text)) {
+      return;
+    }
+
+    await waitForStreamTick();
+    await flushUi();
+  }
+
+  throw new Error(`Timed out waiting for text: ${text}`);
+};
+
 const createDeferred = <T>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -286,5 +305,48 @@ describe('bindUi scene switching', () => {
 
     expect(document.body.textContent).toContain('gpt-4o-mini');
     expect(document.querySelector('[data-action="toggle-model-menu"]')).toBeNull();
+  });
+
+  it('reveals the full current streaming bubble immediately when clicked', async () => {
+    const streamStep = createDeferred<void>();
+
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+    requestStoryReplyStreamMock.mockImplementation(async function* () {
+      yield '旁白：你刚想开口';
+      await streamStep.promise;
+      yield '，她却先一步把后半句也说完了。';
+    });
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '哈喽';
+    (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const streamingBubble = document.querySelector<HTMLElement>('[data-streaming-bubble]');
+    expect(streamingBubble).not.toBeNull();
+    expect(streamingBubble?.textContent).toContain('旁');
+    expect(streamingBubble?.textContent).not.toContain('后半句也说完了');
+
+    streamingBubble?.click();
+    streamStep.resolve();
+    await waitForText('旁白：你刚想开口，她却先一步把后半句也说完了。');
+
+    expect(document.querySelector('[data-streaming-bubble]')).toBeNull();
+    expect(document.body.textContent).toContain('旁白：你刚想开口，她却先一步把后半句也说完了。');
   });
 });

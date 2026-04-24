@@ -56,7 +56,14 @@ export const createAppMarkup = (state: GameState): string => {
   const streamingMarkup =
     state.event.streamingReply && state.ui.mode === 'event' && visibleActiveEvent
       ? `
-        <div class="chat-message character is-streaming">
+        <div
+          class="chat-message character is-streaming"
+          data-streaming-bubble
+          role="button"
+          tabindex="0"
+          aria-label="点击立即显示当前整条回复"
+          title="点击立即显示当前整条回复"
+        >
           <div class="chat-label">${escapeHtml(state.event.streamingLabel || activeEvent?.cast[0] || '角色')}</div>
           <div class="chat-content" data-streaming-content>${escapeHtml(state.event.streamingReply)}<span class="stream-cursor"></span></div>
         </div>

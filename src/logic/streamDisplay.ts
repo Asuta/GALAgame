@@ -5,11 +5,13 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => window.setTi
 export const appendStreamWithRateLimit = async ({
   source,
   getCharsPerSecond,
+  shouldSkipRateLimit = () => false,
   onCharacter,
   sleep = defaultSleep
 }: {
   source: AsyncIterable<string>;
   getCharsPerSecond: () => number;
+  shouldSkipRateLimit?: () => boolean;
   onCharacter: (character: string) => void;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<void> => {
@@ -17,7 +19,7 @@ export const appendStreamWithRateLimit = async ({
 
   for await (const chunk of source) {
     for (const character of Array.from(chunk)) {
-      if (hasRenderedCharacter) {
+      if (hasRenderedCharacter && !shouldSkipRateLimit()) {
         const charsPerSecond = clampStreamCharsPerSecond(getCharsPerSecond());
         await sleep(1000 / charsPerSecond);
       }
