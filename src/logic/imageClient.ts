@@ -1,4 +1,4 @@
-import type { GeneratedEvent, Scene } from '../data/types';
+import type { GeneratedEvent, Scene, TaskRuntime } from '../data/types';
 
 const DEFAULT_IMAGE_MODEL = 'qwen-image-2.0';
 const DEFAULT_IMAGE_SIZE = '720*1280';
@@ -37,6 +37,28 @@ export interface BuildEventImagePromptInput {
   memoryFacts?: string[];
   prompt?: string;
 }
+
+export interface BuildTaskImagePromptInput {
+  task: TaskRuntime;
+  locationLabel: string;
+  memorySummary?: string;
+  memoryFacts?: string[];
+  prompt?: string;
+}
+
+export const sanitizeTaskVisualText = (value: string): string => {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+
+  return normalized
+    .replace(/不正规/g, '特别主题风格')
+    .replace(/地下/g, '街角')
+    .replace(/非法/g, '非日常')
+    .replace(/色情|成人|性服务|擦边|下流|低俗/g, '成熟氛围')
+    .replace(/女仆咖啡店/g, '主题咖啡店')
+    .replace(/女仆/g, '主题店员')
+    .replace(/调教|诱惑|挑逗/g, '互动')
+    .replace(/暴力|血腥|杀人/g, '紧张');
+};
 
 export const normalizeImageSize = (size: string): string => {
   const normalized = String(size || '')
@@ -199,6 +221,35 @@ export const buildEventImagePrompt = ({
   ].join('\n');
 };
 
+export const buildTaskImagePrompt = ({
+  task,
+  locationLabel,
+  memorySummary = '',
+  memoryFacts = []
+}: BuildTaskImagePromptInput): string => {
+  const latestSegment = task.segments.slice(-1)[0];
+  const safeTaskContent = sanitizeTaskVisualText(task.content);
+  const safeLocationLabel = sanitizeTaskVisualText(locationLabel);
+  const safeMemorySummary = sanitizeTaskVisualText(memorySummary);
+  const visualMoment = `当前画面：玩家正在执行“${safeTaskContent}”，画面聚焦公开场所里的日常行动、人物状态、环境氛围和时间感。`;
+
+  return [
+    '现代恋爱向视觉小说任务插图，竖屏 9:16 构图。',
+    '请生成全年龄、安全、日常向的画面；如果原任务含有暧昧、违规或成人暗示，请改写成普通公开场所里的主题体验。',
+    '不要表现违法、成人服务、性暗示、暴力伤害、未成年人不当内容；不要画成 UI 截图，不要出现文字、水印或 logo。',
+    `当前位置：${safeLocationLabel}。`,
+    `任务内容：${safeTaskContent}。`,
+    `任务进度：${task.startMinutes} 到 ${task.endMinutes} 分钟刻度，当前在 ${task.currentMinutes}。`,
+    latestSegment ? `时间片：${latestSegment.fromLabel}-${latestSegment.toLabel}。` : '时间片：任务刚开始。',
+    visualMoment,
+    '画面小细节：可以加入菜单、街景、窗边座位、手机、饮品、路灯等安全日常物件。',
+    `世界记忆摘要：${safeMemorySummary || '暂无。'}`,
+    '画面只需要表现一个安全、清晰、可视化的当前瞬间，不要复述任务日志，不要加入额外剧情。',
+    '画面需要优先表现任务本身的动作、地点、时间氛围和人物状态；如果有插曲，只作为画面里的小细节处理。',
+    '高质量二次元游戏 CG 风格，完整背景，自然光影，叙事感强，干净细节。'
+  ].join('\n');
+};
+
 export const getImageRuntimeConfig = (): ImageRuntimeConfig => {
   const endpoint = import.meta.env.VITE_IMAGE_API_BASE_URL || DEFAULT_IMAGE_ENDPOINT;
   const apiKey = import.meta.env.VITE_IMAGE_API_KEY;
@@ -244,6 +295,44 @@ export const requestGeneratedEventImage = async ({
 
   if (!response.ok) {
     throw new Error(responseBody?.error?.message || responseBody?.message || '图片生成失败。');
+  }
+
+  const imageUrls = extractGeneratedImageUrls(responseBody);
+
+  if (!imageUrls.length) {
+    throw new Error('图片生成接口没有返回图片地址。');
+  }
+
+  return imageUrls[0];
+};
+
+export const requestGeneratedTaskImage = async ({
+  task,
+  locationLabel,
+  memorySummary = '',
+  memoryFacts = [],
+  prompt,
+  fetchImpl = fetch
+}: BuildTaskImagePromptInput & { fetchImpl?: typeof fetch }): Promise<string> => {
+  const config = getImageRuntimeConfig();
+  const finalPrompt = prompt?.trim() || buildTaskImagePrompt({ task, locationLabel, memorySummary, memoryFacts });
+  const payload = buildImageGenerationPayload({
+    model: config.model,
+    prompt: finalPrompt
+  });
+  const response = await fetchImpl(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+  const responseText = await response.text();
+  const responseBody = responseText ? JSON.parse(responseText) : {};
+
+  if (!response.ok) {
+    throw new Error(responseBody?.error?.message || responseBody?.message || '任务图片生成失败。');
   }
 
   const imageUrls = extractGeneratedImageUrls(responseBody);

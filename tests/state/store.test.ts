@@ -10,13 +10,21 @@ import {
   enterRegion,
   enterScene,
   finishEventImageGeneration,
+  failTaskImageGeneration,
   finishStreamingReply,
+  appendTaskSegment,
+  completeTask,
+  finishTaskImageGeneration,
   invalidateSceneEventCache,
   isSceneEventReusable,
   markEventReadyToEnd,
+  openTaskPlanningPage,
   recordWorldAdvance,
   selectSceneEventSeed,
   setSceneGenerationError,
+  setTaskControlMode,
+  startTask,
+  startTaskImageGeneration,
   startSceneGeneration,
   startEvent,
   startStreamingReply
@@ -248,5 +256,88 @@ describe('store transitions', () => {
 
     expect(state.event.generatedImages['event-1']).toBe('https://example.com/image.png');
     expect(state.event.generatedImagePrompts['event-1']).toBe('竖屏教室窗边 CG');
+  });
+
+  it('starts and completes a global task without depending on the current scene', () => {
+    let state = createInitialState();
+
+    state = openTaskPlanningPage(state);
+    state = startTask(state, {
+      content: '晨跑一小时',
+      startMinutes: 6 * 60,
+      endMinutes: 7 * 60,
+      executionMode: 'result',
+      segmentMinutes: 10
+    });
+
+    expect(state.ui.mode).toBe('task');
+    expect(state.task.activeTask?.content).toBe('晨跑一小时');
+    expect(state.task.activeTask?.startMinutes).toBe(360);
+
+    state = completeTask(state, '你完成了晨跑，精神变得清醒。', ['完成晨跑', '体力状态更好']);
+
+    expect(state.ui.currentPage).toBe('decision');
+    expect(state.clock.label).toBe('清晨 07:00');
+    expect(state.task.lastCompletedSummary).toContain('完成了晨跑');
+    expect(state.memory.facts).toContain('完成晨跑');
+  });
+
+  it('advances process task segments and switches between auto and manual control', () => {
+    let state = createInitialState();
+
+    state = startTask(state, {
+      content: '复习数学',
+      startMinutes: 20 * 60,
+      endMinutes: 21 * 60,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    state = appendTaskSegment(
+      state,
+      {
+        id: 'segment-1',
+        fromLabel: '20:00',
+        toLabel: '20:10',
+        content: '你先把错题本翻开，找到最容易失分的几道题。',
+        complication: '手机忽然震了一下',
+        attentionLevel: 'medium'
+      },
+      20 * 60 + 10
+    );
+
+    expect(state.task.activeTask?.currentMinutes).toBe(1210);
+    expect(state.task.activeTask?.facts.join('\n')).toContain('手机忽然震了一下');
+
+    state = setTaskControlMode(state, 'manual');
+    expect(state.task.activeTask?.controlMode).toBe('manual');
+
+    state = setTaskControlMode(state, 'auto');
+    expect(state.task.activeTask?.controlMode).toBe('auto');
+  });
+
+  it('tracks task image generation without changing task progression', () => {
+    let state = createInitialState();
+
+    state = startTask(state, {
+      content: '去女仆咖啡店玩一玩',
+      startMinutes: 18 * 60,
+      endMinutes: 19 * 60,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    state = startTaskImageGeneration(state);
+
+    expect(state.task.activeTask?.imageGeneration.isGenerating).toBe(true);
+
+    state = finishTaskImageGeneration(state, 'https://example.com/task.png', '任务 CG 提示词');
+
+    expect(state.task.activeTask?.generatedImageUrl).toBe('https://example.com/task.png');
+    expect(state.task.activeTask?.generatedImagePrompt).toBe('任务 CG 提示词');
+    expect(state.task.activeTask?.imageGeneration.isGenerating).toBe(false);
+
+    state = failTaskImageGeneration(startTaskImageGeneration(state), '图片额度不足');
+
+    expect(state.task.activeTask?.generatedImageUrl).toBe('https://example.com/task.png');
+    expect(state.task.activeTask?.imageGeneration.error).toBe('图片额度不足');
   });
 });

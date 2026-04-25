@@ -7,7 +7,13 @@ import {
   failEventImageGeneration,
   finishEventImageGeneration,
   openImagePromptPage,
+  openTaskPlanningPage,
   setSceneSummary,
+  startTask,
+  appendTaskSegment,
+  completeTask,
+  finishTaskImageGeneration,
+  startTaskImageGeneration,
   startEvent,
   startEventImageGeneration
 } from '../../src/state/store';
@@ -425,6 +431,65 @@ describe('renderApp', () => {
 
     expect(document.querySelector('[data-action="toggle-model-menu"]')).toBeNull();
     expect(document.querySelector('.model-menu')).toBeNull();
+  });
+
+  it('renders task planning, task running, and decision pages', () => {
+    let state = openTaskPlanningPage(createInitialState());
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-testid="task-planning-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('安排任务');
+    expect(document.querySelector('[data-task-content]')).not.toBeNull();
+    expect(document.querySelector('[data-action="start-task"]')).not.toBeNull();
+
+    state = startTask(state, {
+      content: '晨跑一小时',
+      startMinutes: 360,
+      endMinutes: 420,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    state = appendTaskSegment(
+      state,
+      {
+        id: 'segment-1',
+        fromLabel: '06:00',
+        toLabel: '06:10',
+        content: '你沿着河边慢慢跑开，清晨的风让人清醒。',
+        complication: '远处有人也在同一条跑道上停下',
+        attentionLevel: 'medium'
+      },
+      370
+    );
+
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+    expect(document.querySelector('[data-testid="task-running-page"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="task-visual-panel"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="task-visual-placeholder"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('晨跑一小时');
+    expect(document.body.textContent).toContain('远处有人也在同一条跑道上停下');
+    expect(document.querySelector('[data-action="task-next-segment"]')).not.toBeNull();
+    expect(document.querySelector('[data-action="task-manual-mode"]')).not.toBeNull();
+
+    state = startTaskImageGeneration(state);
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+    expect(document.body.textContent).toContain('正在生成任务画面');
+    expect(document.querySelector('[data-testid="task-image-generating-overlay"]')).not.toBeNull();
+
+    state = finishTaskImageGeneration(state, 'https://example.com/task.png', '任务 CG 提示词');
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+    expect(document.querySelector('[data-testid="task-visual-image"]')?.getAttribute('src')).toBe('https://example.com/task.png');
+    expect(document.querySelector('[data-testid="task-visual-placeholder"]')).toBeNull();
+
+    state = completeTask(state, '晨跑结束后，你的状态明显更清醒。', ['完成晨跑']);
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-testid="decision-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('接下来做什么');
+    expect(document.body.textContent).toContain('晨跑结束后');
+    expect(document.querySelector('[data-action="open-task-planning"]')).not.toBeNull();
   });
 
   it('shows an animated scene-generation placeholder while an event is loading', () => {

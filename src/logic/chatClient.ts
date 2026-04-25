@@ -1,4 +1,4 @@
-import type { EventPhase, GeneratedEvent, Scene, TimeSlot } from '../data/types';
+import type { EventPhase, GeneratedEvent, Scene, TaskRuntime, TaskSegment, TimeSlot } from '../data/types';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -109,6 +109,60 @@ export interface BuildFallbackTimeSettlementInput {
   eventFacts: string[];
 }
 
+export interface TaskSettlement {
+  summary: string;
+  facts: string[];
+}
+
+export interface BuildTaskResultRequestInput {
+  model: string;
+  systemPrompt: string;
+  task: TaskRuntime;
+  timeLabel: string;
+  memorySummary: string;
+  memoryFacts: string[];
+  locationLabel: string;
+}
+
+export interface BuildTaskSegmentRequestInput {
+  model: string;
+  systemPrompt: string;
+  task: TaskRuntime;
+  fromLabel: string;
+  toLabel: string;
+  memorySummary: string;
+  memoryFacts: string[];
+  locationLabel: string;
+}
+
+export interface BuildTaskManualRequestInput {
+  model: string;
+  systemPrompt: string;
+  task: TaskRuntime;
+  playerInput: string;
+  memorySummary: string;
+  memoryFacts: string[];
+  locationLabel: string;
+}
+
+export interface BuildTaskFinalSummaryRequestInput {
+  model: string;
+  systemPrompt: string;
+  task: TaskRuntime;
+  memorySummary: string;
+  memoryFacts: string[];
+  locationLabel: string;
+}
+
+export interface BuildTaskImagePromptRequestInput {
+  model: string;
+  systemPrompt: string;
+  task: TaskRuntime;
+  locationLabel: string;
+  memorySummary: string;
+  memoryFacts: string[];
+}
+
 const sanitizeFact = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
 const extractJsonObject = (text: string): string | null => {
@@ -123,6 +177,9 @@ const extractJsonObject = (text: string): string | null => {
 };
 
 const clampMinutes = (minutes: number): number => Math.max(10, Math.min(180, Math.round(minutes)));
+
+const isTaskAttentionLevel = (value: string): value is TaskSegment['attentionLevel'] =>
+  value === 'low' || value === 'medium' || value === 'high';
 
 export const buildChatRequest = ({
   model,
@@ -357,6 +414,202 @@ export const buildEventImagePromptRequest = ({
   ]
 });
 
+export const buildTaskResultRequest = ({
+  model,
+  systemPrompt,
+  task,
+  timeLabel,
+  memorySummary,
+  memoryFacts,
+  locationLabel
+}: BuildTaskResultRequestInput): ChatRequestPayload => ({
+  model,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        systemPrompt,
+        '你负责结算玩家安排的一段时间任务。',
+        '请输出 JSON 对象，不要添加代码块。',
+        '必须包含字段：summary, facts。',
+        'summary 是给玩家看的几段结果总结；facts 是可以写入世界记忆的短句数组。'
+      ].join('\n')
+    },
+    {
+      role: 'user',
+      content: [
+        `当前时间：${timeLabel}`,
+        `当前位置：${locationLabel}`,
+        `任务内容：${task.content}`,
+        `任务时间：${task.startMinutes} 分钟刻度到 ${task.endMinutes} 分钟刻度`,
+        `世界记忆摘要：${memorySummary}`,
+        `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        '请忽略细节过程，直接推演这段时间结束后发生了什么、任务完成得如何、世界状态有什么轻微变化。',
+        '可以出现插曲，但插曲必须留在任务内部，不要把它升级为独立事件。'
+      ].join('\n')
+    }
+  ]
+});
+
+export const buildTaskSegmentRequest = ({
+  model,
+  systemPrompt,
+  task,
+  fromLabel,
+  toLabel,
+  memorySummary,
+  memoryFacts,
+  locationLabel
+}: BuildTaskSegmentRequestInput): ChatRequestPayload => ({
+  model,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        systemPrompt,
+        '你负责按时间片推进玩家正在执行的任务。',
+        '请输出 JSON 对象，不要添加代码块。',
+        '必须包含字段：content, complication, attentionLevel。',
+        'attentionLevel 只能是 low, medium, high。',
+        '突发情况只能作为任务过程的一部分，不要转成独立事件。'
+      ].join('\n')
+    },
+    {
+      role: 'user',
+      content: [
+        `当前位置：${locationLabel}`,
+        `任务内容：${task.content}`,
+        `任务总时间：${task.startMinutes} 到 ${task.endMinutes}`,
+        `当前时间片：${fromLabel} 到 ${toLabel}`,
+        `已有片段：${task.segments.length ? task.segments.map((segment) => `${segment.fromLabel}-${segment.toLabel}：${segment.content}`).join('\n') : '暂无'}`,
+        `手动托管记录：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
+        `世界记忆摘要：${memorySummary}`,
+        `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        '请生成这一小段时间内发生的事情。内容要具体，但不要替玩家做重大选择。'
+      ].join('\n')
+    }
+  ]
+});
+
+export const buildTaskManualRequest = ({
+  model,
+  systemPrompt,
+  task,
+  playerInput,
+  memorySummary,
+  memoryFacts,
+  locationLabel
+}: BuildTaskManualRequestInput): ChatRequestPayload => ({
+  model,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        systemPrompt,
+        '你正在托管一个任务内部的手动互动。',
+        '输出保持中文，使用“旁白：...”和相关角色名对白。',
+        '玩家可以介入当前情节，但你必须维持任务目标、当前时间段和世界背景。',
+        '不要把突发情况升级为独立事件，不要跳出任务结束时间。'
+      ].join('\n')
+    },
+    {
+      role: 'user',
+      content: [
+        `当前位置：${locationLabel}`,
+        `任务内容：${task.content}`,
+        `任务时间：${task.startMinutes} 到 ${task.endMinutes}`,
+        `当前进度分钟刻度：${task.currentMinutes}`,
+        `已有片段：${task.segments.length ? task.segments.map((segment) => `${segment.fromLabel}-${segment.toLabel}：${segment.content}`).join('\n') : '暂无'}`,
+        `最近托管对话：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
+        `世界记忆摘要：${memorySummary}`,
+        `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        `玩家本轮输入：${playerInput}`,
+        '请在任务内部自然回应，并停在等待玩家继续或交还自动托管的位置。'
+      ].join('\n')
+    }
+  ],
+  stream: true
+});
+
+export const buildTaskFinalSummaryRequest = ({
+  model,
+  systemPrompt,
+  task,
+  memorySummary,
+  memoryFacts,
+  locationLabel
+}: BuildTaskFinalSummaryRequestInput): ChatRequestPayload => ({
+  model,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        systemPrompt,
+        '你负责把一个过程导向任务整理成最终结算。',
+        '请输出 JSON 对象，不要添加代码块。',
+        '必须包含字段：summary, facts。'
+      ].join('\n')
+    },
+    {
+      role: 'user',
+      content: [
+        `当前位置：${locationLabel}`,
+        `任务内容：${task.content}`,
+        `任务时间：${task.startMinutes} 到 ${task.endMinutes}`,
+        `任务片段：${task.segments.length ? task.segments.map((segment) => `${segment.fromLabel}-${segment.toLabel}：${segment.content}`).join('\n') : '暂无'}`,
+        `手动托管记录：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
+        `世界记忆摘要：${memorySummary}`,
+        `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        '请总结这段任务的完成情况、重要插曲和可以留下的记忆事实。'
+      ].join('\n')
+    }
+  ]
+});
+
+export const buildTaskImagePromptRequest = ({
+  model,
+  systemPrompt,
+  task,
+  locationLabel,
+  memorySummary,
+  memoryFacts
+}: BuildTaskImagePromptRequestInput): ChatRequestPayload => ({
+  model,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        systemPrompt,
+        '你负责把当前任务进度改写成一条安全、可执行的图片生成提示词。',
+        '只输出最终生图提示词，不要解释，不要 JSON，不要 Markdown。',
+        '提示词必须反映当前任务进度、当前时间片、地点氛围和最近发生的可视化动作。',
+        '如果原文包含违规、成人、擦边、暴力或不适合生图的内容，请改写成全年龄、公开场所、日常主题体验的画面。',
+        '不要输出违法、成人服务、性暗示、暴力伤害、未成年人不当内容；不要要求图片里出现文字、水印、logo 或 UI。'
+      ].join('\n')
+    },
+    {
+      role: 'user',
+      content: [
+        `当前位置：${locationLabel}`,
+        `任务内容：${task.content}`,
+        `任务时间：${task.startMinutes} 到 ${task.endMinutes}`,
+        `当前进度分钟刻度：${task.currentMinutes}`,
+        `任务执行方式：${task.executionMode}`,
+        `托管模式：${task.controlMode}`,
+        `任务片段：${task.segments.length ? task.segments.map((segment) => `${segment.fromLabel}-${segment.toLabel}：${segment.content}${segment.complication ? `（插曲：${segment.complication}）` : ''}`).join('\n') : '暂无'}`,
+        `手动托管记录：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
+        `任务事实：${task.facts.length ? task.facts.join('；') : '暂无'}`,
+        `世界记忆摘要：${memorySummary || '暂无'}`,
+        `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        '',
+        '请先在心里判断当前任务最适合画成哪一个“此刻画面”，再直接输出一条中文生图提示词。',
+        '提示词要像导演分镜：包含人物状态、动作、场景、光线、构图、氛围和画风。',
+        '长度控制在 300 字以内。'
+      ].join('\n')
+    }
+  ]
+});
+
 export const buildFallbackTimeSettlement = ({
   transcript,
   eventFacts
@@ -437,6 +690,67 @@ export const parseEventTimeSettlement = (responseText: string): EventTimeSettlem
   };
 };
 
+export const parseTaskSettlement = (responseText: string): TaskSettlement => {
+  const jsonText = extractJsonObject(responseText);
+
+  if (!jsonText) {
+    return {
+      summary: responseText.trim() || '任务已经完成。',
+      facts: []
+    };
+  }
+
+  const parsed = JSON.parse(jsonText) as Partial<TaskSettlement>;
+
+  return {
+    summary: parsed.summary?.trim() || '任务已经完成。',
+    facts: Array.isArray(parsed.facts) ? parsed.facts.map((fact) => fact.trim()).filter(Boolean) : []
+  };
+};
+
+export const parseTaskSegment = ({
+  task,
+  fromLabel,
+  toLabel,
+  responseText
+}: {
+  task: TaskRuntime;
+  fromLabel: string;
+  toLabel: string;
+  responseText: string;
+}): TaskSegment => {
+  const jsonText = extractJsonObject(responseText);
+  const fallbackContent = responseText.trim() || `${fromLabel} 到 ${toLabel}，任务继续向前推进。`;
+
+  if (!jsonText) {
+    return {
+      id: `${task.id}-segment-${task.segments.length + 1}`,
+      fromLabel,
+      toLabel,
+      content: fallbackContent,
+      complication: null,
+      attentionLevel: 'low'
+    };
+  }
+
+  const parsed = JSON.parse(jsonText) as Partial<{
+    content: string;
+    summary: string;
+    complication: string | null;
+    attentionLevel: string;
+  }>;
+  const attentionLevel = parsed.attentionLevel && isTaskAttentionLevel(parsed.attentionLevel) ? parsed.attentionLevel : 'low';
+
+  return {
+    id: `${task.id}-segment-${task.segments.length + 1}`,
+    fromLabel,
+    toLabel,
+    content: parsed.content?.trim() || parsed.summary?.trim() || fallbackContent,
+    complication: parsed.complication?.trim() || null,
+    attentionLevel
+  };
+};
+
 export const parseSseDelta = (line: string): string | null => {
   const trimmed = line.trim();
 
@@ -503,6 +817,119 @@ export const getChatRuntimeConfig = (): ChatRuntimeConfig => {
   }
 
   return { endpoint, apiKey, model };
+};
+
+export const requestTaskResult = async (
+  input: Omit<BuildTaskResultRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
+): Promise<TaskSettlement> => {
+  const config = getChatRuntimeConfig();
+  const payload = buildTaskResultRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是恋爱文字冒险游戏里的日程任务结算器。'
+  });
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`任务结算失败：${response.status}`);
+  }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  return parseTaskSettlement(extractAssistantReply(data));
+};
+
+export const requestTaskSegment = async (
+  input: Omit<BuildTaskSegmentRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
+): Promise<TaskSegment> => {
+  const config = getChatRuntimeConfig();
+  const payload = buildTaskSegmentRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是恋爱文字冒险游戏里的任务过程推进器。'
+  });
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`任务片段生成失败：${response.status}`);
+  }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  return parseTaskSegment({
+    task: input.task,
+    fromLabel: input.fromLabel,
+    toLabel: input.toLabel,
+    responseText: extractAssistantReply(data)
+  });
+};
+
+export const requestTaskFinalSummary = async (
+  input: Omit<BuildTaskFinalSummaryRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
+): Promise<TaskSettlement> => {
+  const config = getChatRuntimeConfig();
+  const payload = buildTaskFinalSummaryRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是恋爱文字冒险游戏里的任务总结器。'
+  });
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`任务总结失败：${response.status}`);
+  }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  return parseTaskSettlement(extractAssistantReply(data));
+};
+
+export const requestTaskImagePrompt = async (
+  input: Omit<BuildTaskImagePromptRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
+): Promise<string> => {
+  const config = getChatRuntimeConfig();
+  const payload = buildTaskImagePromptRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是视觉小说游戏的任务生图提示词导演。'
+  });
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`任务生图提示词生成失败：${response.status}`);
+  }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  return extractAssistantReply(data);
 };
 
 export const requestStoryReply = async (
@@ -653,6 +1080,68 @@ export async function* requestStoryReplyStream(
 
   if (!response.ok) {
     throw new Error(`模型请求失败：${response.status}`);
+  }
+
+  if (!response.body) {
+    throw new Error('模型接口没有返回流式响应。');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const delta = parseSseDelta(line);
+
+      if (delta) {
+        yield delta;
+      }
+    }
+  }
+
+  buffer += decoder.decode();
+
+  for (const line of buffer.split(/\r?\n/)) {
+    const delta = parseSseDelta(line);
+
+    if (delta) {
+      yield delta;
+    }
+  }
+}
+
+export async function* requestTaskManualReplyStream(
+  input: Omit<BuildTaskManualRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
+): AsyncGenerator<string> {
+  const config = getChatRuntimeConfig();
+  const payload = buildTaskManualRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是一款现代恋爱向文字冒险游戏的任务托管主持人。'
+  });
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`任务托管失败：${response.status}`);
   }
 
   if (!response.body) {

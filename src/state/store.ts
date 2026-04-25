@@ -1,5 +1,16 @@
 import { worldData } from '../data/world';
-import type { EventPhase, GeneratedEvent, Mode, Scene, SceneEventSeed, TimeSlot } from '../data/types';
+import type {
+  EventPhase,
+  GeneratedEvent,
+  Mode,
+  Scene,
+  SceneEventSeed,
+  TaskControlMode,
+  TaskExecutionMode,
+  TaskRuntime,
+  TaskSegment,
+  TimeSlot
+} from '../data/types';
 
 export interface TranscriptMessage {
   role: 'player' | 'character' | 'system';
@@ -13,7 +24,7 @@ export interface GameState {
     currentSceneId: string | null;
   };
   ui: {
-    currentPage: 'game' | 'settings' | 'event-details' | 'image-prompt';
+    currentPage: 'game' | 'settings' | 'event-details' | 'image-prompt' | 'task-planning' | 'task-running' | 'decision';
     mode: Mode;
     isModelMenuOpen: boolean;
     isStreamSpeedMenuOpen: boolean;
@@ -49,6 +60,12 @@ export interface GameState {
     streamingReply: string;
     streamingLabel: string;
     readyToEnd: boolean;
+  };
+  task: {
+    activeTask: TaskRuntime | null;
+    lastCompletedSummary: string;
+    lastCompletedFacts: string[];
+    error: string | null;
   };
   memory: {
     summary: string;
@@ -138,6 +155,21 @@ export const formatClockLabel = (hour: number, minute = 0): string => {
   return `${prefix} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 };
 
+export const normalizeClockMinutes = (minutes: number): number => {
+  const dayMinutes = 24 * 60;
+  const rounded = Math.round(minutes);
+
+  return ((rounded % dayMinutes) + dayMinutes) % dayMinutes;
+};
+
+export const formatMinutesClockLabel = (minutes: number): string => {
+  const normalized = normalizeClockMinutes(minutes);
+  const hour = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+
+  return formatClockLabel(hour, minute);
+};
+
 export const createInitialState = (): GameState => ({
   navigation: {
     currentRegionId: null,
@@ -180,6 +212,12 @@ export const createInitialState = (): GameState => ({
     streamingReply: '',
     streamingLabel: '',
     readyToEnd: false
+  },
+  task: {
+    activeTask: null,
+    lastCompletedSummary: '',
+    lastCompletedFacts: [],
+    error: null
   },
   memory: {
     summary: '你刚开始在这座城市里探索，故事还没有真正展开。',
@@ -469,6 +507,379 @@ export const endEvent = (state: GameState): GameState => {
       streamingReply: '',
       streamingLabel: '',
       readyToEnd: false
+    }
+  };
+};
+
+export const openTaskPlanningPage = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    currentPage: 'task-planning',
+    mode: 'explore',
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false,
+    isSending: false
+  },
+  task: {
+    ...state.task,
+    error: null
+  }
+});
+
+export const openDecisionPage = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    currentPage: 'decision',
+    mode: 'explore',
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false,
+    isSending: false
+  }
+});
+
+export const startTask = (
+  state: GameState,
+  input: {
+    content: string;
+    startMinutes: number;
+    endMinutes: number;
+    executionMode: TaskExecutionMode;
+    segmentMinutes: number;
+  }
+): GameState => {
+  const content = input.content.trim();
+  const title = content.length > 18 ? `${content.slice(0, 18)}...` : content;
+  const startMinutes = normalizeClockMinutes(input.startMinutes);
+  const endMinutes = Math.max(startMinutes + 1, Math.round(input.endMinutes));
+  const segmentMinutes = Math.max(5, Math.min(60, Math.round(input.segmentMinutes)));
+
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      currentPage: 'task-running',
+      mode: 'task',
+      isSending: true,
+      isModelMenuOpen: false,
+      isStreamSpeedMenuOpen: false
+    },
+    task: {
+      activeTask: {
+        id: `task-${Date.now()}`,
+        title: title || '未命名任务',
+        content,
+        startMinutes,
+        endMinutes,
+        currentMinutes: startMinutes,
+        segmentMinutes,
+        executionMode: input.executionMode,
+        controlMode: 'auto',
+        status: 'running',
+        summary: '',
+        facts: [],
+        generatedImageUrl: null,
+        generatedImagePrompt: '',
+        imageGeneration: {
+          isGenerating: false,
+          error: null
+        },
+        segments: [],
+        transcript: [],
+        streamingReply: '',
+        streamingLabel: ''
+      },
+      lastCompletedSummary: state.task.lastCompletedSummary,
+      lastCompletedFacts: state.task.lastCompletedFacts,
+      error: null
+    }
+  };
+};
+
+export const setTaskError = (state: GameState, message: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isSending: false
+  },
+  task: {
+    ...state.task,
+    error: message
+  }
+});
+
+export const startTaskImageGeneration = (state: GameState): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  return {
+    ...state,
+    task: {
+      ...state.task,
+      activeTask: {
+        ...state.task.activeTask,
+        imageGeneration: {
+          isGenerating: true,
+          error: null
+        }
+      }
+    }
+  };
+};
+
+export const finishTaskImageGeneration = (state: GameState, imageUrl: string, prompt = ''): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  return {
+    ...state,
+    task: {
+      ...state.task,
+      activeTask: {
+        ...state.task.activeTask,
+        generatedImageUrl: imageUrl,
+        generatedImagePrompt: prompt.trim() || state.task.activeTask.generatedImagePrompt,
+        imageGeneration: {
+          isGenerating: false,
+          error: null
+        }
+      }
+    }
+  };
+};
+
+export const failTaskImageGeneration = (state: GameState, error: string): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  return {
+    ...state,
+    task: {
+      ...state.task,
+      activeTask: {
+        ...state.task.activeTask,
+        imageGeneration: {
+          isGenerating: false,
+          error
+        }
+      }
+    }
+  };
+};
+
+export const startTaskRequest = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isSending: true
+  },
+  task: {
+    ...state.task,
+    error: null
+  }
+});
+
+export const finishTaskRequest = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isSending: false
+  }
+});
+
+export const appendTaskSegment = (state: GameState, segment: TaskSegment, toMinutes: number): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      isSending: false
+    },
+    task: {
+      ...state.task,
+      error: null,
+      activeTask: {
+        ...state.task.activeTask,
+        currentMinutes: Math.min(toMinutes, state.task.activeTask.endMinutes),
+        segments: [...state.task.activeTask.segments, segment],
+        facts: Array.from(
+          new Set([
+            ...state.task.activeTask.facts,
+            `任务片段 ${segment.fromLabel}-${segment.toLabel}：${segment.content}`,
+            ...(segment.complication ? [`任务中出现插曲：${segment.complication}`] : [])
+          ])
+        )
+      }
+    }
+  };
+};
+
+export const setTaskControlMode = (state: GameState, controlMode: TaskControlMode): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  return {
+    ...state,
+    task: {
+      ...state.task,
+      activeTask: {
+        ...state.task.activeTask,
+        controlMode
+      }
+    }
+  };
+};
+
+export const appendTaskTranscriptMessage = (state: GameState, entry: TranscriptMessage): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  return {
+    ...state,
+    task: {
+      ...state.task,
+      activeTask: {
+        ...state.task.activeTask,
+        transcript: [...state.task.activeTask.transcript, entry]
+      }
+    }
+  };
+};
+
+export const startTaskStreamingReply = (state: GameState, label: string): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      isSending: true
+    },
+    task: {
+      ...state.task,
+      error: null,
+      activeTask: {
+        ...state.task.activeTask,
+        streamingReply: '',
+        streamingLabel: label
+      }
+    }
+  };
+};
+
+export const appendTaskStreamingReply = (state: GameState, chunk: string): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  return {
+    ...state,
+    task: {
+      ...state.task,
+      activeTask: {
+        ...state.task.activeTask,
+        streamingReply: `${state.task.activeTask.streamingReply}${chunk}`
+      }
+    }
+  };
+};
+
+export const finishTaskStreamingReply = (state: GameState): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  const reply = state.task.activeTask.streamingReply.trim();
+
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      isSending: false
+    },
+    task: {
+      ...state.task,
+      activeTask: {
+        ...state.task.activeTask,
+        transcript: reply
+          ? [
+              ...state.task.activeTask.transcript,
+              {
+                role: 'character',
+                label: state.task.activeTask.streamingLabel || '世界',
+                content: reply
+              }
+            ]
+          : state.task.activeTask.transcript,
+        facts: reply
+          ? Array.from(new Set([...state.task.activeTask.facts, `手动托管推进：${reply}`]))
+          : state.task.activeTask.facts,
+        streamingReply: '',
+        streamingLabel: ''
+      }
+    }
+  };
+};
+
+export const completeTask = (state: GameState, summary: string, facts: string[]): GameState => {
+  if (!state.task.activeTask) {
+    return state;
+  }
+
+  const nextFacts = Array.from(new Set([...state.task.activeTask.facts, ...facts.filter(Boolean)]));
+  const endMinutes = state.task.activeTask.endMinutes;
+  const normalizedEndMinutes = normalizeClockMinutes(endMinutes);
+  const nextHour = Math.floor(normalizedEndMinutes / 60);
+  const nextMinute = normalizedEndMinutes % 60;
+
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      currentPage: 'decision',
+      mode: 'explore',
+      isSending: false,
+      isModelMenuOpen: false,
+      isStreamSpeedMenuOpen: false
+    },
+    clock: {
+      hour: nextHour,
+      minute: nextMinute,
+      timeSlot: resolveTimeSlot(nextHour),
+      label: formatClockLabel(nextHour, nextMinute)
+    },
+    world: {
+      revision: state.world.revision + 1,
+      lastEventSummary: `任务【${state.task.activeTask.title}】已经完成。${summary}`
+    },
+    memory: {
+      summary: summary || state.memory.summary,
+      facts: Array.from(new Set([...state.memory.facts, ...nextFacts])).slice(-12)
+    },
+    task: {
+      activeTask: {
+        ...state.task.activeTask,
+        currentMinutes: state.task.activeTask.endMinutes,
+        status: 'completed',
+        summary,
+        facts: nextFacts,
+        streamingReply: '',
+        streamingLabel: ''
+      },
+      lastCompletedSummary: summary,
+      lastCompletedFacts: nextFacts,
+      error: null
     }
   };
 };

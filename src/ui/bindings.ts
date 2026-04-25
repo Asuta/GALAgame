@@ -1,9 +1,14 @@
 import { worldData } from '../data/world';
-import { requestGeneratedEventImage } from '../logic/imageClient';
+import { requestGeneratedEventImage, requestGeneratedTaskImage } from '../logic/imageClient';
 import {
   requestEventImagePrompt,
   requestEventTimeSettlement,
   requestGeneratedSceneEvent,
+  requestTaskFinalSummary,
+  requestTaskImagePrompt,
+  requestTaskManualReplyStream,
+  requestTaskResult,
+  requestTaskSegment,
   requestStoryReplyStream,
   stripEventEndMarker
 } from '../logic/chatClient';
@@ -28,15 +33,30 @@ import {
   invalidateSceneEventCache,
   isSceneEventReusable,
   markEventReadyToEnd,
+  appendTaskSegment,
+  appendTaskStreamingReply,
+  appendTaskTranscriptMessage,
   closeSettingsPage,
+  completeTask,
+  failTaskImageGeneration,
+  finishTaskRequest,
+  finishTaskImageGeneration,
+  finishTaskStreamingReply,
   openEventDetailsPage,
   openImagePromptPage,
+  openTaskPlanningPage,
   openSettingsPage,
   recordWorldAdvance,
   selectSceneEventSeed,
+  setTaskControlMode,
+  setTaskError,
   setSceneSummary,
   setSceneGenerationError,
   setCurrentModel,
+  startTask,
+  startTaskImageGeneration,
+  startTaskRequest,
+  startTaskStreamingReply,
   startSceneGeneration,
   setStreamCharsPerSecond,
   startEventImageGeneration,
@@ -105,6 +125,31 @@ const persistSettings = (state: GameState): void => {
 
 const CONTINUE_STORY_PROMPT = '玩家暂时没有回应，只是在等待、观察和感受当前气氛。请根据当前场景自然推进一小段剧情，然后停在等待玩家选择或回应的位置。';
 const STREAM_REVEAL_BOOST_CHARS = 10;
+
+const parseTimeInput = (value: string): number | null => {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+
+  if (!match) {
+    return null;
+  }
+
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+
+  if (hour > 23 || minute > 59) {
+    return null;
+  }
+
+  return hour * 60 + minute;
+};
+
+const formatTaskTimeLabel = (minutes: number): string => {
+  const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  const hour = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+};
 
 export const bindUi = (root: HTMLDivElement, initialState = createInitialState()): void => {
   let state: GameState = applyStoredSettings(initialState);
@@ -342,6 +387,250 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     rerender();
   };
 
+  const generateCurrentTaskImage = async () => {
+    const task = state.task.activeTask;
+
+    if (!task || task.imageGeneration.isGenerating) {
+      return;
+    }
+
+    const taskId = task.id;
+    const locationLabel = resolveLocationLabel(state);
+
+    state = startTaskImageGeneration(state);
+    rerender();
+
+    try {
+      const latestTask = state.task.activeTask ?? task;
+      const imagePrompt = await requestTaskImagePrompt({
+        model: state.settings.currentModel,
+        task: latestTask,
+        locationLabel,
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts
+      });
+      const imageUrl = await requestGeneratedTaskImage({
+        task: latestTask,
+        locationLabel,
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        prompt: imagePrompt
+      });
+
+      if (state.task.activeTask?.id === taskId) {
+        state = finishTaskImageGeneration(state, imageUrl, imagePrompt);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+
+      if (state.task.activeTask?.id === taskId) {
+        state = failTaskImageGeneration(state, message);
+      }
+    }
+
+    rerender();
+  };
+
+  const completeActiveTask = async () => {
+    const task = state.task.activeTask;
+
+    if (!task || state.ui.isSending) {
+      return;
+    }
+
+    state = startTaskRequest(state);
+    rerender();
+
+    try {
+      const settlement =
+        task.executionMode === 'result' && task.summary
+          ? { summary: task.summary, facts: task.facts }
+          : await requestTaskFinalSummary({
+              model: state.settings.currentModel,
+              task,
+              memorySummary: state.memory.summary,
+              memoryFacts: state.memory.facts,
+              locationLabel: resolveLocationLabel(state)
+            });
+      state = completeTask(state, settlement.summary, settlement.facts);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      state = setTaskError(state, message);
+    }
+
+    rerender();
+  };
+
+  const generateNextTaskSegment = async () => {
+    const task = state.task.activeTask;
+
+    if (!task || state.ui.isSending || task.controlMode === 'manual') {
+      return;
+    }
+
+    if (task.currentMinutes >= task.endMinutes) {
+      await completeActiveTask();
+      return;
+    }
+
+    const fromMinutes = task.currentMinutes;
+    const toMinutes = Math.min(task.endMinutes, task.currentMinutes + task.segmentMinutes);
+    const fromLabel = formatTaskTimeLabel(fromMinutes);
+    const toLabel = formatTaskTimeLabel(toMinutes);
+
+    state = startTaskRequest(state);
+    rerender();
+
+    try {
+      const segment = await requestTaskSegment({
+        model: state.settings.currentModel,
+        task,
+        fromLabel,
+        toLabel,
+        memorySummary: state.memory.summary,
+        memoryFacts: state.memory.facts,
+        locationLabel: resolveLocationLabel(state)
+      });
+      state = appendTaskSegment(state, segment, toMinutes);
+
+      if (toMinutes >= task.endMinutes) {
+        const nextTask = state.task.activeTask;
+
+        if (nextTask) {
+          const settlement = await requestTaskFinalSummary({
+            model: state.settings.currentModel,
+            task: nextTask,
+            memorySummary: state.memory.summary,
+            memoryFacts: state.memory.facts,
+            locationLabel: resolveLocationLabel(state)
+          });
+          state = completeTask(state, settlement.summary, settlement.facts);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      state = setTaskError(state, message);
+    } finally {
+      state = finishTaskRequest(state);
+    }
+
+    rerender();
+  };
+
+  const startPlannedTask = async () => {
+    if (state.ui.isSending) {
+      return;
+    }
+
+    const content = root.querySelector<HTMLTextAreaElement>('[data-task-content]')?.value.trim() ?? '';
+    const startInput = root.querySelector<HTMLInputElement>('[data-task-start-time]')?.value ?? '';
+    const endInput = root.querySelector<HTMLInputElement>('[data-task-end-time]')?.value ?? '';
+    const executionMode =
+      root.querySelector<HTMLInputElement>('input[name="task-execution-mode"]:checked')?.value === 'process'
+        ? 'process'
+        : 'result';
+    const segmentMinutes = Number(root.querySelector<HTMLSelectElement>('[data-task-segment-minutes]')?.value ?? 10);
+    const startMinutes = parseTimeInput(startInput);
+    const endMinutesRaw = parseTimeInput(endInput);
+
+    if (!content) {
+      state = setTaskError(state, '请先填写任务内容。');
+      rerender();
+      return;
+    }
+
+    if (startMinutes === null || endMinutesRaw === null) {
+      state = setTaskError(state, '请填写有效的开始和结束时间。');
+      rerender();
+      return;
+    }
+
+    const endMinutes = endMinutesRaw <= startMinutes ? endMinutesRaw + 24 * 60 : endMinutesRaw;
+
+    state = startTask(state, {
+      content,
+      startMinutes,
+      endMinutes,
+      executionMode,
+      segmentMinutes
+    });
+    rerender();
+
+    const task = state.task.activeTask;
+
+    if (!task) {
+      return;
+    }
+
+    try {
+      await generateCurrentTaskImage();
+
+      if (executionMode === 'result') {
+        const settlement = await requestTaskResult({
+          model: state.settings.currentModel,
+          task,
+          timeLabel: state.clock.label,
+          memorySummary: state.memory.summary,
+          memoryFacts: state.memory.facts,
+          locationLabel: resolveLocationLabel(state)
+        });
+        state = completeTask(state, settlement.summary, settlement.facts);
+      } else {
+        state = finishTaskRequest(state);
+        rerender();
+        await generateNextTaskSegment();
+        return;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      state = setTaskError(state, message);
+    }
+
+    rerender();
+  };
+
+  const runTaskManualTurn = async (playerInput: string) => {
+    const task = state.task.activeTask;
+
+    if (!task || task.controlMode !== 'manual' || state.ui.isSending || !playerInput.trim()) {
+      return;
+    }
+
+    state = appendTaskTranscriptMessage(state, {
+      role: 'player',
+      label: '你',
+      content: playerInput
+    });
+    state = startTaskStreamingReply(state, '世界');
+    rerender();
+
+    try {
+      await appendStreamWithRateLimit({
+        source: requestTaskManualReplyStream({
+          model: state.settings.currentModel,
+          task,
+          playerInput,
+          memorySummary: state.memory.summary,
+          memoryFacts: state.memory.facts,
+          locationLabel: resolveLocationLabel(state)
+        }),
+        getCharsPerSecond: () => state.settings.streamCharsPerSecond,
+        shouldSkipRateLimit: () => false,
+        onCharacter: (character) => {
+          state = appendTaskStreamingReply(state, character);
+          rerender();
+        }
+      });
+
+      state = finishTaskStreamingReply(state);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      state = setTaskError(state, message);
+    }
+
+    rerender();
+  };
+
   const generateCurrentEventImage = async () => {
     const eventForImage = getVisibleActiveEvent(state) ?? getVisiblePreparedEvent(state);
 
@@ -437,14 +726,54 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       rerender();
     });
 
+    root.querySelector<HTMLButtonElement>('[data-action="open-task-planning"]')?.addEventListener('click', () => {
+      state = openTaskPlanningPage(state);
+      rerender();
+    });
+
     root.querySelector<HTMLButtonElement>('[data-action="open-event-details"]')?.addEventListener('click', () => {
       state = openEventDetailsPage(state);
       rerender();
     });
 
-    root.querySelector<HTMLButtonElement>('[data-action="back-to-game"]')?.addEventListener('click', () => {
-      state = closeSettingsPage(state);
+    root.querySelectorAll<HTMLButtonElement>('[data-action="back-to-game"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state = closeSettingsPage(state);
+        rerender();
+      });
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-task"]')?.addEventListener('click', () => {
+      void startPlannedTask();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="task-next-segment"]')?.addEventListener('click', () => {
+      void generateNextTaskSegment();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="task-manual-mode"]')?.addEventListener('click', () => {
+      state = setTaskControlMode(state, 'manual');
       rerender();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="task-auto-mode"]')?.addEventListener('click', () => {
+      state = setTaskControlMode(state, 'auto');
+      rerender();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="task-finish"]')?.addEventListener('click', () => {
+      void completeActiveTask();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="task-send"]')?.addEventListener('click', () => {
+      const input = root.querySelector<HTMLTextAreaElement>('textarea');
+      const value = input?.value.trim() ?? '';
+
+      if (input) {
+        input.value = '';
+      }
+
+      void runTaskManualTurn(value);
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="continue-story"]')?.addEventListener('click', () => {
@@ -459,6 +788,10 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     root.querySelector<HTMLButtonElement>('[data-action="generate-event-image"]')?.addEventListener('click', () => {
       void generateCurrentEventImage();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="generate-task-image"]')?.addEventListener('click', () => {
+      void generateCurrentTaskImage();
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="open-image-prompt"]')?.addEventListener('click', () => {

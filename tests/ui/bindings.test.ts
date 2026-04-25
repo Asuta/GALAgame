@@ -2,16 +2,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   requestGeneratedEventImageMock,
+  requestGeneratedTaskImageMock,
   requestEventImagePromptMock,
   requestGeneratedSceneEventMock,
   requestStoryReplyStreamMock,
-  requestEventTimeSettlementMock
+  requestEventTimeSettlementMock,
+  requestTaskResultMock,
+  requestTaskSegmentMock,
+  requestTaskManualReplyStreamMock,
+  requestTaskFinalSummaryMock,
+  requestTaskImagePromptMock
 } = vi.hoisted(() => ({
   requestGeneratedEventImageMock: vi.fn(),
+  requestGeneratedTaskImageMock: vi.fn(),
   requestEventImagePromptMock: vi.fn(),
   requestGeneratedSceneEventMock: vi.fn(),
   requestStoryReplyStreamMock: vi.fn(),
-  requestEventTimeSettlementMock: vi.fn()
+  requestEventTimeSettlementMock: vi.fn(),
+  requestTaskResultMock: vi.fn(),
+  requestTaskSegmentMock: vi.fn(),
+  requestTaskManualReplyStreamMock: vi.fn(),
+  requestTaskFinalSummaryMock: vi.fn(),
+  requestTaskImagePromptMock: vi.fn()
 }));
 
 vi.mock('../../src/logic/imageClient', async () => {
@@ -19,7 +31,8 @@ vi.mock('../../src/logic/imageClient', async () => {
 
   return {
     ...actual,
-    requestGeneratedEventImage: requestGeneratedEventImageMock
+    requestGeneratedEventImage: requestGeneratedEventImageMock,
+    requestGeneratedTaskImage: requestGeneratedTaskImageMock
   };
 });
 
@@ -31,7 +44,12 @@ vi.mock('../../src/logic/chatClient', async () => {
     requestEventImagePrompt: requestEventImagePromptMock,
     requestGeneratedSceneEvent: requestGeneratedSceneEventMock,
     requestStoryReplyStream: requestStoryReplyStreamMock,
-    requestEventTimeSettlement: requestEventTimeSettlementMock
+    requestEventTimeSettlement: requestEventTimeSettlementMock,
+    requestTaskResult: requestTaskResultMock,
+    requestTaskSegment: requestTaskSegmentMock,
+    requestTaskManualReplyStream: requestTaskManualReplyStreamMock,
+    requestTaskFinalSummary: requestTaskFinalSummaryMock,
+    requestTaskImagePrompt: requestTaskImagePromptMock
   };
 });
 
@@ -116,16 +134,41 @@ describe('bindUi scene switching', () => {
     historyClientHeight = 240;
     historyScrollHeight = 800;
     requestGeneratedEventImageMock.mockReset();
+    requestGeneratedTaskImageMock.mockReset();
     requestEventImagePromptMock.mockReset();
     requestGeneratedSceneEventMock.mockReset();
     requestStoryReplyStreamMock.mockReset();
     requestEventTimeSettlementMock.mockReset();
+    requestTaskResultMock.mockReset();
+    requestTaskSegmentMock.mockReset();
+    requestTaskManualReplyStreamMock.mockReset();
+    requestTaskFinalSummaryMock.mockReset();
+    requestTaskImagePromptMock.mockReset();
     requestStoryReplyStreamMock.mockImplementation(async function* () {});
+    requestTaskManualReplyStreamMock.mockImplementation(async function* () {});
     requestEventTimeSettlementMock.mockResolvedValue({
       minutesElapsed: 20,
       summary: '这次事件过去了二十分钟。'
     });
+    requestTaskResultMock.mockResolvedValue({
+      summary: '任务顺利完成，状态变得更稳定。',
+      facts: ['完成了一次任务']
+    });
+    requestTaskSegmentMock.mockImplementation(async ({ task, fromLabel, toLabel }) => ({
+      id: `${task.id}-segment-${task.segments.length + 1}`,
+      fromLabel,
+      toLabel,
+      content: `${fromLabel} 到 ${toLabel}，任务继续推进。`,
+      complication: '途中出现一个小插曲',
+      attentionLevel: 'medium'
+    }));
+    requestTaskFinalSummaryMock.mockResolvedValue({
+      summary: '过程任务结束，留下了一点新的线索。',
+      facts: ['完成过程任务']
+    });
+    requestTaskImagePromptMock.mockResolvedValue('模型重写的任务生图提示词：玩家在咖啡店窗边查看手机。');
     requestGeneratedEventImageMock.mockResolvedValue('https://example.com/generated-event.png');
+    requestGeneratedTaskImageMock.mockResolvedValue('https://example.com/generated-task.png');
     requestEventImagePromptMock.mockResolvedValue('生成的固定生图提示词：当前她把练习册合上，窗边两人对视。');
   });
 
@@ -538,5 +581,81 @@ describe('bindUi scene switching', () => {
 
     expect(document.body.textContent).toContain('出图失败：图片额度不足');
     expect(document.querySelector('[data-action="send"]')?.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('runs a global process task through manual takeover and completion', async () => {
+    requestTaskManualReplyStreamMock.mockImplementation(async function* () {
+      yield '旁白：你停下来确认那阵脚步声。';
+    });
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-action="open-task-planning"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.querySelector('[data-testid="task-planning-page"]')).not.toBeNull();
+
+    const contentInput = document.querySelector('[data-task-content]') as HTMLTextAreaElement;
+    contentInput.value = '晨跑一小时';
+    (document.querySelector('input[value="process"]') as HTMLInputElement).click();
+    (document.querySelector('[data-action="start-task"]') as HTMLButtonElement).click();
+    await flushUi();
+    await flushUi();
+
+    expect(requestTaskSegmentMock).toHaveBeenCalledOnce();
+    expect(requestTaskImagePromptMock).toHaveBeenCalledOnce();
+    expect(requestGeneratedTaskImageMock).toHaveBeenCalledOnce();
+    expect(requestTaskImagePromptMock.mock.calls[0][0].task.content).toBe('晨跑一小时');
+    expect(requestGeneratedTaskImageMock.mock.calls[0][0].prompt).toContain('模型重写的任务生图提示词');
+    expect(document.querySelector('[data-testid="task-running-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('途中出现一个小插曲');
+    expect(document.querySelector('[data-testid="task-visual-image"]')?.getAttribute('src')).toBe('https://example.com/generated-task.png');
+
+    (document.querySelector('[data-action="task-next-segment"]') as HTMLButtonElement).click();
+    await flushUi();
+    await flushUi();
+
+    expect(requestTaskSegmentMock).toHaveBeenCalledTimes(2);
+    expect(requestTaskImagePromptMock).toHaveBeenCalledOnce();
+    expect(requestGeneratedTaskImageMock).toHaveBeenCalledOnce();
+
+    (document.querySelector('[data-action="generate-task-image"]') as HTMLButtonElement).click();
+    await flushUi();
+    await flushUi();
+
+    expect(requestTaskImagePromptMock).toHaveBeenCalledTimes(2);
+    expect(requestTaskImagePromptMock.mock.calls[1][0].task.segments.length).toBeGreaterThan(0);
+    expect(requestGeneratedTaskImageMock).toHaveBeenCalledTimes(2);
+
+    (document.querySelector('[data-action="task-manual-mode"]') as HTMLButtonElement).click();
+    await flushUi();
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '我放慢脚步看看是谁。';
+    (document.querySelector('[data-action="task-send"]') as HTMLButtonElement).click();
+    await flushUi();
+    await waitForText('旁白：你停下来确认那阵脚步声。');
+
+    expect(requestTaskManualReplyStreamMock).toHaveBeenCalledOnce();
+
+    (document.querySelector('[data-action="task-auto-mode"]') as HTMLButtonElement).click();
+    await flushUi();
+    (document.querySelector('[data-action="task-finish"]') as HTMLButtonElement).click();
+    await flushUi();
+    await flushUi();
+
+    expect(requestTaskFinalSummaryMock).toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="decision-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('过程任务结束');
+
+    const mapButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-action="back-to-game"]'));
+    const bottomMapButton = mapButtons.find((button) => button.textContent?.includes('回到地图探索'));
+
+    expect(bottomMapButton).not.toBeUndefined();
+    bottomMapButton?.click();
+    await flushUi();
+
+    expect(document.querySelector('[data-testid="decision-page"]')).toBeNull();
+    expect(document.querySelector('[data-testid="dialogue-panel"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('选择一个区域');
   });
 });

@@ -6,7 +6,13 @@ import {
   buildEventTimeSettlementRequest,
   buildFallbackSceneEvent,
   buildFallbackTimeSettlement,
+  buildTaskImagePromptRequest,
+  buildTaskManualRequest,
+  buildTaskResultRequest,
+  buildTaskSegmentRequest,
   extractAssistantReply,
+  parseTaskSegment,
+  parseTaskSettlement,
   parseEventTimeSettlement,
   parsePlannedSceneEvent,
   parseSseDelta,
@@ -15,9 +21,11 @@ import {
   requestGeneratedSceneEvent,
   requestStoryReply,
   requestStoryReplyStream,
+  requestTaskImagePrompt,
   stripEventEndMarker
 } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
+import { createInitialState, startTask } from '../../src/state/store';
 
 const CHAT_ENV = {
   VITE_CHAT_COMPLETIONS_URL: 'https://example.com/v1/chat/completions',
@@ -220,6 +228,127 @@ describe('chatClient helpers', () => {
     expect(payload.messages[1].content).toContain('放学后的空教室');
   });
 
+  it('builds task result, segment, and manual takeover requests with task constraints', () => {
+    let state = createInitialState();
+    state = startTask(state, {
+      content: '晨跑一小时',
+      startMinutes: 360,
+      endMinutes: 420,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    const task = state.task.activeTask!;
+
+    const resultPayload = buildTaskResultRequest({
+      model: 'deepseek-chat',
+      systemPrompt: '你是任务结算器。',
+      task,
+      timeLabel: '清晨 06:00',
+      memorySummary: '故事刚开始。',
+      memoryFacts: [],
+      locationLabel: '城市'
+    });
+    const segmentPayload = buildTaskSegmentRequest({
+      model: 'deepseek-chat',
+      systemPrompt: '你是任务过程推进器。',
+      task,
+      fromLabel: '06:00',
+      toLabel: '06:10',
+      memorySummary: '故事刚开始。',
+      memoryFacts: [],
+      locationLabel: '城市'
+    });
+    const manualPayload = buildTaskManualRequest({
+      model: 'deepseek-chat',
+      systemPrompt: '你是任务托管主持人。',
+      task,
+      playerInput: '我放慢脚步看看是谁。',
+      memorySummary: '故事刚开始。',
+      memoryFacts: [],
+      locationLabel: '城市'
+    });
+
+    expect(resultPayload.messages[1].content).toContain('晨跑一小时');
+    expect(resultPayload.messages[1].content).toContain('忽略细节过程');
+    expect(segmentPayload.messages[0].content).toContain('突发情况只能作为任务过程的一部分');
+    expect(segmentPayload.messages[1].content).toContain('06:00 到 06:10');
+    expect(manualPayload.stream).toBe(true);
+    expect(manualPayload.messages[1].content).toContain('我放慢脚步看看是谁。');
+    expect(manualPayload.messages[0].content).toContain('不要把突发情况升级为独立事件');
+  });
+
+  it('builds a task image prompt request from current task progress', () => {
+    let state = createInitialState();
+    state = startTask(state, {
+      content: '去主题咖啡店玩一玩',
+      startMinutes: 18 * 60,
+      endMinutes: 19 * 60,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    state = {
+      ...state,
+      task: {
+        ...state.task,
+        activeTask: {
+          ...state.task.activeTask!,
+          segments: [
+            {
+              id: 'segment-1',
+              fromLabel: '18:00',
+              toLabel: '18:10',
+              content: '你靠窗坐下，翻开菜单。',
+              complication: '手机收到一条陌生提醒',
+              attentionLevel: 'medium'
+            }
+          ],
+          facts: ['玩家坐在窗边']
+        }
+      }
+    };
+
+    const payload = buildTaskImagePromptRequest({
+      model: 'deepseek-chat',
+      systemPrompt: '你是任务生图提示词导演。',
+      task: state.task.activeTask!,
+      locationLabel: '城市',
+      memorySummary: '玩家正在安排自己的行动。',
+      memoryFacts: ['咖啡店里播放着轻快的歌']
+    });
+
+    expect(payload.messages[0].content).toContain('只输出最终生图提示词');
+    expect(payload.messages[0].content).toContain('当前任务进度');
+    expect(payload.messages[1].content).toContain('去主题咖啡店玩一玩');
+    expect(payload.messages[1].content).toContain('你靠窗坐下');
+    expect(payload.messages[1].content).toContain('手机收到一条陌生提醒');
+    expect(payload.messages[1].content).toContain('长度控制在 300 字以内');
+  });
+
+  it('parses task settlement and process segment responses', () => {
+    let state = createInitialState();
+    state = startTask(state, {
+      content: '复习数学',
+      startMinutes: 1200,
+      endMinutes: 1260,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    const task = state.task.activeTask!;
+    const settlement = parseTaskSettlement('{"summary":"你完成了一小时复习。","facts":["复习了错题","状态更稳定"]}');
+    const segment = parseTaskSegment({
+      task,
+      fromLabel: '20:00',
+      toLabel: '20:10',
+      responseText: '{"content":"你先翻开错题本。","complication":"手机亮了一下","attentionLevel":"high"}'
+    });
+
+    expect(settlement.summary).toContain('完成了一小时复习');
+    expect(settlement.facts).toContain('复习了错题');
+    expect(segment.content).toContain('错题本');
+    expect(segment.complication).toBe('手机亮了一下');
+    expect(segment.attentionLevel).toBe('high');
+  });
+
   it('parses settled event minutes from json', () => {
     const settlement = parseEventTimeSettlement('{"minutesElapsed":45,"summary":"这次交流拉长到了晚饭前后。"}');
 
@@ -330,6 +459,38 @@ describe('chatClient helpers', () => {
         transcript: ['你：你看起来有点心事。']
       })
     ).resolves.toContain('林澄');
+  });
+
+  it('requests a task image prompt from the chat model', async () => {
+    vi.stubEnv('VITE_CHAT_COMPLETIONS_URL', CHAT_ENV.VITE_CHAT_COMPLETIONS_URL);
+    vi.stubEnv('VITE_CHAT_API_KEY', CHAT_ENV.VITE_CHAT_API_KEY);
+    vi.stubEnv('VITE_CHAT_MODEL', CHAT_ENV.VITE_CHAT_MODEL);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: '竖屏视觉小说 CG，玩家坐在主题咖啡店窗边查看手机。' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    );
+    const state = startTask(createInitialState(), {
+      content: '去主题咖啡店玩一玩',
+      startMinutes: 18 * 60,
+      endMinutes: 19 * 60,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+
+    await expect(
+      requestTaskImagePrompt({
+        model: 'deepseek-chat',
+        task: state.task.activeTask!,
+        locationLabel: '城市',
+        memorySummary: '玩家正在安排自己的行动。',
+        memoryFacts: []
+      })
+    ).resolves.toContain('主题咖啡店');
   });
 
   it('throws when streaming reply request fails', async () => {

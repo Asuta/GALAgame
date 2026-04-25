@@ -453,6 +453,13 @@ body {
   cursor: pointer;
 }
 
+.choice-button:disabled,
+.action-row button:disabled,
+.settings-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 @keyframes refreshSpin {
   to {
     transform: rotate(360deg);
@@ -584,6 +591,153 @@ body {
   color: white;
   cursor: pointer;
   font-weight: 700;
+}
+
+.task-page {
+  min-height: calc(100vh - 24px);
+}
+
+.task-visual-card {
+  height: auto;
+  min-height: 280px;
+}
+
+.task-visual-card .visual-stage {
+  height: 240px;
+}
+
+.task-visual-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.72);
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(55, 45, 94, 0.96), rgba(24, 20, 42, 0.98));
+}
+
+.task-form-card,
+.task-summary-card {
+  gap: 16px;
+}
+
+.task-field {
+  display: grid;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.task-field textarea,
+.task-field input,
+.task-field select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(12, 12, 24, 0.5);
+  color: white;
+  font: inherit;
+}
+
+.task-field textarea {
+  min-height: 96px;
+  resize: vertical;
+  font-weight: 400;
+}
+
+.task-time-grid,
+.task-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.task-meta-row,
+.task-segment-time,
+.decision-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-meta-row {
+  flex-wrap: wrap;
+}
+
+.task-meta-row span,
+.task-segment-time span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+}
+
+.task-summary-card p,
+.task-segment-card p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.65;
+}
+
+.task-log {
+  display: grid;
+  gap: 10px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.task-segment-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.task-complication {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 205, 120, 0.12);
+  color: #ffe4b8;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.task-action-row {
+  flex-wrap: wrap;
+}
+
+.task-action-row button {
+  flex: 1 1 120px;
+}
+
+.decision-actions {
+  flex-direction: column;
+}
+
+.decision-secondary {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .event-details-page {

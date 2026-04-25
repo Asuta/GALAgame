@@ -1,5 +1,6 @@
 import { worldData } from '../data/world';
 import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
+import { formatMinutesClockLabel } from '../state/store';
 import type { GameState } from '../state/store';
 import { resolveVisualSelection } from '../visual/assetCatalog';
 
@@ -37,6 +38,29 @@ const phaseLabels = {
   overlimit: '越界',
   resolution: '收束'
 };
+
+const formatTimeInputValue = (minutes: number): string => {
+  const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  const hour = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+const renderTaskSegment = (segment: NonNullable<GameState['task']['activeTask']>['segments'][number]): string => `
+  <div class="task-segment-card">
+    <div class="task-segment-time">
+      <span>${escapeHtml(segment.fromLabel)}</span>
+      <span>${escapeHtml(segment.toLabel)}</span>
+    </div>
+    <p>${escapeHtml(segment.content)}</p>
+    ${
+      segment.complication
+        ? `<div class="task-complication">插曲：${escapeHtml(segment.complication)}</div>`
+        : ''
+    }
+  </div>
+`;
 
 export const createAppMarkup = (state: GameState): string => {
   const currentRegion = getCurrentRegion(state);
@@ -165,6 +189,226 @@ export const createAppMarkup = (state: GameState): string => {
       </button>
     `
     : '';
+
+  if (state.ui.currentPage === 'task-planning') {
+    const startMinutes = state.clock.hour * 60 + state.clock.minute;
+    const endMinutes = startMinutes + 60;
+
+    return `
+      <div class="phone-frame phone-frame--settings">
+        <section class="settings-page task-page" data-testid="task-planning-page">
+          <header class="settings-header">
+            <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
+            <div>
+              <p>全局行动</p>
+              <h1>安排任务</h1>
+            </div>
+          </header>
+          <div class="settings-card task-form-card">
+            <label class="task-field">
+              <span>任务内容</span>
+              <textarea data-task-content placeholder="例如：晨跑、复习数学、去商场买礼物"></textarea>
+            </label>
+            <div class="task-time-grid">
+              <label class="task-field">
+                <span>开始时间</span>
+                <input data-task-start-time type="time" value="${formatTimeInputValue(startMinutes)}" />
+              </label>
+              <label class="task-field">
+                <span>结束时间</span>
+                <input data-task-end-time type="time" value="${formatTimeInputValue(endMinutes)}" />
+              </label>
+            </div>
+            <div class="task-choice-grid" role="group" aria-label="任务执行方式">
+              <label class="task-choice">
+                <input type="radio" name="task-execution-mode" value="result" checked />
+                <span>结果导向</span>
+              </label>
+              <label class="task-choice">
+                <input type="radio" name="task-execution-mode" value="process" />
+                <span>过程导向</span>
+              </label>
+            </div>
+            <label class="task-field">
+              <span>过程间隔</span>
+              <select data-task-segment-minutes>
+                <option value="5">5 分钟</option>
+                <option value="10" selected>10 分钟</option>
+                <option value="15">15 分钟</option>
+              </select>
+            </label>
+            ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
+            <button class="settings-action-button" data-action="start-task" ${state.ui.isSending ? 'disabled' : ''}>开始任务</button>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  if (state.ui.currentPage === 'task-running') {
+    const task = state.task.activeTask;
+    const taskImageUrl = task?.generatedImageUrl ?? null;
+    const isGeneratingTaskImage = !!task?.imageGeneration.isGenerating;
+    const taskImageError = task?.imageGeneration.error ?? null;
+
+    return `
+      <div class="phone-frame phone-frame--settings">
+        <section class="settings-page task-page" data-testid="task-running-page">
+          <header class="settings-header">
+            <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
+            <div>
+              <p>${escapeHtml(task ? `${formatMinutesClockLabel(task.currentMinutes)} / ${formatMinutesClockLabel(task.endMinutes)}` : state.clock.label)}</p>
+              <h1>${escapeHtml(task?.title ?? '任务执行中')}</h1>
+            </div>
+          </header>
+          ${
+            task
+              ? `
+                <section class="visual-card task-visual-card" data-testid="task-visual-panel">
+                  <p class="visual-label">${escapeHtml(task.title)}</p>
+                  <div class="visual-stage visual-stage--task${taskImageUrl ? ' visual-stage--event-generated' : ''}${isGeneratingTaskImage ? ' visual-stage--image-generating' : ''}">
+                    ${
+                      taskImageUrl
+                        ? `
+                          <img
+                            class="visual-background"
+                            data-testid="task-visual-image"
+                            src="${escapeHtml(taskImageUrl)}"
+                            alt="${escapeHtml(task.title)}"
+                          />
+                        `
+                        : `
+                          <div class="task-visual-placeholder" data-testid="task-visual-placeholder">
+                            ${escapeHtml(isGeneratingTaskImage ? '正在生成任务画面' : '任务画面还没有生成')}
+                          </div>
+                        `
+                    }
+                    <div class="visual-shade"></div>
+                    ${
+                      isGeneratingTaskImage
+                        ? `
+                          <div class="event-image-generating-overlay" data-testid="task-image-generating-overlay" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                          </div>
+                        `
+                        : ''
+                    }
+                    <button
+                      class="event-image-refresh-button ${isGeneratingTaskImage ? 'is-loading' : ''}"
+                      data-action="generate-task-image"
+                      aria-label="${escapeHtml(isGeneratingTaskImage ? '正在生成任务图' : '重新生成任务图')}"
+                      title="${escapeHtml(isGeneratingTaskImage ? '正在生成任务图' : '重新生成任务图')}"
+                      ${isGeneratingTaskImage ? 'disabled' : ''}
+                    >
+                      <span aria-hidden="true">↻</span>
+                    </button>
+                  </div>
+                  ${taskImageError ? `<div class="event-image-error" role="alert">出图失败：${escapeHtml(taskImageError)}</div>` : ''}
+                </section>
+                <div class="settings-card task-summary-card">
+                  <div class="task-meta-row">
+                    <span>${task.executionMode === 'result' ? '结果导向' : '过程导向'}</span>
+                    <span>${task.controlMode === 'manual' ? '手动托管' : '自动执行'}</span>
+                  </div>
+                  <p>${escapeHtml(task.content)}</p>
+                </div>
+                <article class="task-log" data-chat-history>
+                  ${
+                    task.segments.length
+                      ? task.segments.map(renderTaskSegment).join('')
+                      : `<div class="story-placeholder">${escapeHtml(state.ui.isSending ? '正在推演任务中...' : '还没有生成任务片段。')}</div>`
+                  }
+                  ${task.transcript
+                    .map(
+                      (message) => `
+                        <div class="chat-message ${message.role}">
+                          <div class="chat-label">${escapeHtml(message.label)}</div>
+                          <div class="chat-content">${escapeHtml(message.content)}</div>
+                        </div>
+                      `
+                    )
+                    .join('')}
+                  ${
+                    task.streamingReply
+                      ? `
+                        <div class="chat-message character is-streaming" data-task-streaming-bubble role="button" tabindex="0">
+                          <div class="chat-label">${escapeHtml(task.streamingLabel || '世界')}</div>
+                          <div class="chat-content" data-task-streaming-content>${escapeHtml(task.streamingReply)}<span class="stream-cursor"></span></div>
+                        </div>
+                      `
+                      : ''
+                  }
+                  ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
+                </article>
+                <div class="input-row">
+                  <textarea placeholder="手动托管时输入你的介入内容。" ${task.controlMode === 'manual' && !state.ui.isSending ? '' : 'disabled'}></textarea>
+                  <div class="action-row task-action-row">
+                    ${
+                      task.executionMode === 'process'
+                        ? `
+                          <button data-action="task-next-segment" ${state.ui.isSending || task.controlMode === 'manual' || task.currentMinutes >= task.endMinutes ? 'disabled' : ''}>下一段</button>
+                          <button data-action="task-manual-mode" ${state.ui.isSending || task.controlMode === 'manual' ? 'disabled' : ''}>手动接管</button>
+                          <button data-action="task-auto-mode" ${state.ui.isSending || task.controlMode === 'auto' ? 'disabled' : ''}>交还自动</button>
+                        `
+                        : ''
+                    }
+                    <button data-action="task-finish" ${state.ui.isSending ? 'disabled' : ''}>完成任务</button>
+                    <button data-action="task-send" ${task.controlMode === 'manual' && !state.ui.isSending ? '' : 'disabled'}>发送</button>
+                  </div>
+                </div>
+              `
+              : `
+                <div class="settings-card event-detail-empty">
+                  <h2>当前没有任务</h2>
+                  <p>返回后可以重新安排一个全局任务。</p>
+                </div>
+              `
+          }
+        </section>
+      </div>
+    `;
+  }
+
+  if (state.ui.currentPage === 'decision') {
+    return `
+      <div class="phone-frame phone-frame--settings">
+        <section class="settings-page task-page" data-testid="decision-page">
+          <header class="settings-header">
+            <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
+            <div>
+              <p>${escapeHtml(state.clock.label)}</p>
+              <h1>接下来做什么</h1>
+            </div>
+          </header>
+          <div class="settings-card task-summary-card">
+            <strong>刚完成的任务</strong>
+            <p>${escapeHtml(state.task.lastCompletedSummary || '上一段行动已经结束，世界重新回到可选择的状态。')}</p>
+          </div>
+          ${
+            state.task.lastCompletedFacts.length
+              ? `
+                <div class="settings-card">
+                  <div class="settings-section-heading">
+                    <strong>留下的线索</strong>
+                    <span>${state.task.lastCompletedFacts.length} 条</span>
+                  </div>
+                  <ul class="event-detail-list">
+                    ${state.task.lastCompletedFacts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}
+                  </ul>
+                </div>
+              `
+              : ''
+          }
+          <div class="decision-actions">
+            <button class="settings-action-button" data-action="open-task-planning">安排新任务</button>
+            <button class="settings-action-button decision-secondary" data-action="back-to-game">回到地图探索</button>
+          </div>
+        </section>
+      </div>
+    `;
+  }
 
   if (state.ui.currentPage === 'settings') {
     return `
@@ -370,6 +614,7 @@ export const createAppMarkup = (state: GameState): string => {
           <textarea placeholder="输入你想说的话。第一次发送后正式进入事件；回车发送，Shift+回车换行。" ${visibleActiveEvent || visiblePreparedEvent ? '' : 'disabled'}></textarea>
           <div class="action-row">
             <button data-action="open-settings">设置</button>
+            <button data-action="open-task-planning" ${visibleActiveEvent || state.ui.isSending ? 'disabled' : ''}>安排任务</button>
             <button data-action="open-event-details" ${currentScene || visibleActiveEvent ? '' : 'disabled'}>事件详情</button>
             ${
               visibleActiveEvent

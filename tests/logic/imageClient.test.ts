@@ -4,10 +4,14 @@ import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import {
   buildEventImagePrompt,
   buildImageGenerationPayload,
+  buildTaskImagePrompt,
   extractGeneratedImageUrls,
   normalizeImageSize,
-  requestGeneratedEventImage
+  requestGeneratedEventImage,
+  requestGeneratedTaskImage,
+  sanitizeTaskVisualText
 } from '../../src/logic/imageClient';
+import { appendTaskSegment, createInitialState, startTask } from '../../src/state/store';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -132,6 +136,100 @@ describe('imageClient', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer image-key' })
       })
     );
+  });
+
+  it('builds a task image prompt from the current task process', () => {
+    let state = createInitialState();
+    state = startTask(state, {
+      content: '去女仆咖啡店玩一玩',
+      startMinutes: 18 * 60,
+      endMinutes: 19 * 60,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    state = appendTaskSegment(
+      state,
+      {
+        id: 'segment-1',
+        fromLabel: '18:00',
+        toLabel: '18:10',
+        content: '你靠窗坐下，翻开菜单。',
+        complication: '手机突然震动了一下',
+        attentionLevel: 'medium'
+      },
+      18 * 60 + 10
+    );
+
+    const prompt = buildTaskImagePrompt({
+      task: state.task.activeTask!,
+      locationLabel: '城市',
+      memorySummary: '玩家正在安排自己的行动。',
+      memoryFacts: ['咖啡店里播放着轻快的歌']
+    });
+
+    expect(prompt).toContain('现代恋爱向视觉小说任务插图');
+    expect(prompt).toContain('去主题咖啡店玩一玩');
+    expect(prompt).not.toContain('你靠窗坐下');
+    expect(prompt).not.toContain('手机突然震动了一下');
+    expect(prompt).not.toContain('任务事实');
+    expect(prompt).not.toContain('手动托管记录');
+    expect(prompt).toContain('安全日常物件');
+    expect(prompt).toContain('不要出现文字');
+  });
+
+  it('sanitizes risky task wording before sending an image prompt', () => {
+    let state = createInitialState();
+    state = startTask(state, {
+      content: '去那种不正规的女仆咖啡店玩一玩',
+      startMinutes: 18 * 60,
+      endMinutes: 19 * 60,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    const prompt = buildTaskImagePrompt({
+      task: state.task.activeTask!,
+      locationLabel: '城市',
+      memorySummary: '玩家想找一个特别主题的地方放松。'
+    });
+
+    expect(sanitizeTaskVisualText('不正规的地下女仆咖啡店')).toBe('特别主题风格的街角主题咖啡店');
+    expect(prompt).toContain('特别主题风格的主题咖啡店');
+    expect(prompt).not.toContain('不正规');
+    expect(prompt).not.toContain('女仆');
+    expect(prompt).not.toContain('地下');
+    expect(prompt).toContain('全年龄、安全、日常向');
+  });
+
+  it('requests a task image without reference images and extracts the result url', async () => {
+    vi.stubEnv('VITE_IMAGE_API_BASE_URL', 'https://example.com/v1/images/generations');
+    vi.stubEnv('VITE_IMAGE_API_KEY', 'image-key');
+
+    const state = startTask(createInitialState(), {
+      content: '晨跑一小时',
+      startMinutes: 360,
+      endMinutes: 420,
+      executionMode: 'process',
+      segmentMinutes: 10
+    });
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ data: [{ url: 'https://example.com/task.png' }] }), { status: 200 })
+    );
+
+    await expect(
+      requestGeneratedTaskImage({
+        task: state.task.activeTask!,
+        locationLabel: '城市',
+        fetchImpl
+      })
+    ).resolves.toBe('https://example.com/task.png');
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    expect(payload.input.messages[0].content).toEqual([
+      expect.objectContaining({
+        text: expect.stringContaining('晨跑一小时')
+      })
+    ]);
   });
 
   it('downloads reference image urls as data urls before sending the generation request', async () => {
