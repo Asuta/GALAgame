@@ -30,8 +30,16 @@ describe('imageClient', () => {
     expect(payload.input.messages[0].content).toEqual([
       { image: 'data:image/png;base64,scene' },
       { image: 'data:image/png;base64,character' },
-      { text: '学校教室里的恋爱事件图' }
+      {
+        text: expect.stringContaining('学校教室里的恋爱事件图')
+      }
     ]);
+    expect(payload.input.messages[0].content[2]).toEqual({
+      text: expect.stringContaining('高质量二次元动漫视觉小说 CG 插画风格')
+    });
+    expect(payload.input.messages[0].content[2]).toEqual({
+      text: expect.stringContaining('禁止真实照片')
+    });
     expect(payload.parameters).toMatchObject({
       prompt_extend: true,
       watermark: false,
@@ -39,6 +47,8 @@ describe('imageClient', () => {
       size: '720*1280'
     });
     expect(payload.parameters.negative_prompt).toContain('水印');
+    expect(payload.parameters.negative_prompt).toContain('真实照片');
+    expect(payload.parameters.negative_prompt).toContain('写实摄影');
   });
 
   it('normalizes image sizes and rejects invalid sizes', () => {
@@ -99,6 +109,8 @@ describe('imageClient', () => {
     expect(prompt).toContain('林澄把练习册合上');
     expect(prompt).toContain('你：我注意到她的手在发抖。');
     expect(prompt).toContain('你和林澄刚建立起一点信任。');
+    expect(prompt).toContain('二次元动漫视觉小说 CG 风格');
+    expect(prompt).toContain('不要真实照片或写实摄影');
     expect(prompt).toContain('不要文字');
   });
 
@@ -174,6 +186,8 @@ describe('imageClient', () => {
     expect(prompt).not.toContain('任务事实');
     expect(prompt).not.toContain('手动托管记录');
     expect(prompt).toContain('安全日常物件');
+    expect(prompt).toContain('二次元动漫视觉小说 CG 风格');
+    expect(prompt).toContain('不要真实照片或写实摄影');
     expect(prompt).toContain('不要出现文字');
   });
 
@@ -230,6 +244,8 @@ describe('imageClient', () => {
         text: expect.stringContaining('晨跑一小时')
       })
     ]);
+    expect(payload.input.messages[0].content[0].text).toContain('高质量二次元动漫视觉小说 CG 插画风格');
+    expect(payload.input.messages[0].content[0].text).toContain('禁止真实照片');
   });
 
   it('downloads reference image urls as data urls before sending the generation request', async () => {
