@@ -96,9 +96,12 @@ describe('chatClient helpers', () => {
 
     expect(payload.model).toBe('deepseek-chat');
     expect(payload.messages[0].content).toContain('只输出最终生图提示词');
+    expect(payload.messages[0].content).toContain('二次元动漫视觉小说 CG 插画风格');
+    expect(payload.messages[0].content).toContain('禁止写成真实照片');
     expect(payload.messages[1].content).toContain('学校 / 教室');
     expect(payload.messages[1].content).toContain('林澄把练习册合上');
     expect(payload.messages[1].content).toContain('你：你看起来有点心事。');
+    expect(payload.messages[1].content).toContain('不要真实照片或写实摄影');
   });
 
   it('uses the provided model name as request target', () => {
@@ -318,9 +321,12 @@ describe('chatClient helpers', () => {
 
     expect(payload.messages[0].content).toContain('只输出最终生图提示词');
     expect(payload.messages[0].content).toContain('当前任务进度');
+    expect(payload.messages[0].content).toContain('二次元动漫视觉小说 CG 插画风格');
+    expect(payload.messages[0].content).toContain('禁止写成真实照片');
     expect(payload.messages[1].content).toContain('去主题咖啡店玩一玩');
     expect(payload.messages[1].content).toContain('你靠窗坐下');
     expect(payload.messages[1].content).toContain('手机收到一条陌生提醒');
+    expect(payload.messages[1].content).toContain('不要真实照片或写实摄影');
     expect(payload.messages[1].content).toContain('长度控制在 300 字以内');
   });
 

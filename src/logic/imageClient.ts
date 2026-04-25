@@ -3,7 +3,10 @@ import type { GeneratedEvent, Scene, TaskRuntime } from '../data/types';
 const DEFAULT_IMAGE_MODEL = 'qwen-image-2.0';
 const DEFAULT_IMAGE_SIZE = '720*1280';
 const DEFAULT_IMAGE_ENDPOINT = 'https://token.fun.tv/v1/images/generations';
-const DEFAULT_NEGATIVE_PROMPT = '低清晰度，模糊，畸形手指，多余手指，多余肢体，文字，水印，logo，低质量';
+const DEFAULT_NEGATIVE_PROMPT =
+  '真实照片，真人摄影，写实摄影，电影剧照，3D渲染，欧美写实，低清晰度，模糊，畸形手指，多余手指，多余肢体，文字，水印，logo，低质量';
+const UNIFIED_ANIME_STYLE_PROMPT =
+  '统一画风：高质量二次元动漫视觉小说 CG 插画风格，竖屏 9:16 构图，清晰角色线稿，柔和赛璐璐上色，干净细节，完整场景背景，叙事感强。禁止真实照片、真人摄影、写实摄影、电影剧照、3D 渲染、欧美写实风格。';
 
 export interface ImageGenerationPayload {
   model: string;
@@ -60,6 +63,16 @@ export const sanitizeTaskVisualText = (value: string): string => {
     .replace(/暴力|血腥|杀人/g, '紧张');
 };
 
+export const applyUnifiedAnimeStyle = (prompt: string): string => {
+  const trimmedPrompt = prompt.trim();
+
+  if (!trimmedPrompt) {
+    return trimmedPrompt;
+  }
+
+  return [UNIFIED_ANIME_STYLE_PROMPT, trimmedPrompt].join('\n');
+};
+
 export const normalizeImageSize = (size: string): string => {
   const normalized = String(size || '')
     .trim()
@@ -89,7 +102,7 @@ export const buildImageGenerationPayload = ({
   watermark?: boolean;
   referenceImages?: string[];
 }): ImageGenerationPayload => {
-  const trimmedPrompt = prompt.trim();
+  const trimmedPrompt = applyUnifiedAnimeStyle(prompt);
 
   if (!trimmedPrompt) {
     throw new Error('Prompt is required');
@@ -217,7 +230,7 @@ export const buildEventImagePrompt = ({
     `氛围关键词：${tones}。`,
     '画面需要优先表现最近对话和当前阶段里的动作、距离、情绪和构图。',
     '画面需要包含完整场景背景和自然融入画面的角色，像游戏 CG 一样有叙事感。',
-    '高质量二次元风格，柔和光影，干净细节，不要文字，不要 UI，不要水印。'
+    '高质量二次元动漫视觉小说 CG 风格，柔和光影，干净细节，不要文字，不要 UI，不要水印，不要真实照片或写实摄影。'
   ].join('\n');
 };
 
@@ -246,7 +259,7 @@ export const buildTaskImagePrompt = ({
     `世界记忆摘要：${safeMemorySummary || '暂无。'}`,
     '画面只需要表现一个安全、清晰、可视化的当前瞬间，不要复述任务日志，不要加入额外剧情。',
     '画面需要优先表现任务本身的动作、地点、时间氛围和人物状态；如果有插曲，只作为画面里的小细节处理。',
-    '高质量二次元游戏 CG 风格，完整背景，自然光影，叙事感强，干净细节。'
+    '高质量二次元动漫视觉小说 CG 风格，完整背景，自然光影，叙事感强，干净细节，不要真实照片或写实摄影。'
   ].join('\n');
 };
 
