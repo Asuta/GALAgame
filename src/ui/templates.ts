@@ -129,6 +129,7 @@ export const createAppMarkup = (state: GameState): string => {
   const shouldHideSceneButtons = !!visibleActiveEvent;
   const choiceButtons = currentRegion ? (shouldHideSceneButtons ? '' : sceneButtons) : regionButtons;
 
+  const isGeneratingSceneEvent = !!(currentScene && state.ui.generatingSceneIds.includes(currentScene.id) && !visibleActiveEvent);
   const shouldShowTranscript = !activeEvent || !!visibleActiveEvent;
   const appTopTitle = currentScene
     ? `${currentRegion?.name ?? '城市'} / ${currentScene.name}`
@@ -172,7 +173,7 @@ export const createAppMarkup = (state: GameState): string => {
   const detailEvent = visibleActiveEvent ?? visiblePreparedEvent ?? (currentScene ? state.event.sceneEventCache[currentScene.id] : null);
 
   const loadingPlaceholder =
-    currentScene && state.ui.generatingSceneIds.includes(currentScene.id) && !visibleActiveEvent
+    isGeneratingSceneEvent
       ? `
         <div class="story-placeholder is-loading" aria-live="polite">
           <span class="loading-text">正在生成事件中</span>
@@ -260,41 +261,43 @@ export const createAppMarkup = (state: GameState): string => {
               <h1>安排任务</h1>
             </div>
           </header>
-          <div class="settings-card task-form-card">
-            <label class="task-field">
-              <span>任务内容</span>
-              <textarea data-task-content placeholder="例如：晨跑、复习数学、去商场买礼物"></textarea>
-            </label>
-            <div class="task-time-grid">
+          <div class="settings-scroll-content task-planning-scroll">
+            <div class="settings-card task-form-card">
               <label class="task-field">
-                <span>开始时间</span>
-                <input data-task-start-time type="time" value="${formatTimeInputValue(startMinutes)}" />
+                <span>任务内容</span>
+                <textarea data-task-content placeholder="例如：晨跑、复习数学、去商场买礼物"></textarea>
               </label>
+              <div class="task-time-grid">
+                <label class="task-field">
+                  <span>开始时间</span>
+                  <input data-task-start-time type="time" value="${formatTimeInputValue(startMinutes)}" />
+                </label>
+                <label class="task-field">
+                  <span>结束时间</span>
+                  <input data-task-end-time type="time" value="${formatTimeInputValue(endMinutes)}" />
+                </label>
+              </div>
+              <div class="task-choice-grid" role="group" aria-label="任务执行方式">
+                <label class="task-choice">
+                  <input type="radio" name="task-execution-mode" value="result" checked />
+                  <span>结果导向</span>
+                </label>
+                <label class="task-choice">
+                  <input type="radio" name="task-execution-mode" value="process" />
+                  <span>过程导向</span>
+                </label>
+              </div>
               <label class="task-field">
-                <span>结束时间</span>
-                <input data-task-end-time type="time" value="${formatTimeInputValue(endMinutes)}" />
+                <span>过程间隔</span>
+                <select data-task-segment-minutes>
+                  <option value="5">5 分钟</option>
+                  <option value="10" selected>10 分钟</option>
+                  <option value="15">15 分钟</option>
+                </select>
               </label>
+              ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
+              <button class="settings-action-button" data-action="start-task" ${state.ui.isSending ? 'disabled' : ''}>开始任务</button>
             </div>
-            <div class="task-choice-grid" role="group" aria-label="任务执行方式">
-              <label class="task-choice">
-                <input type="radio" name="task-execution-mode" value="result" checked />
-                <span>结果导向</span>
-              </label>
-              <label class="task-choice">
-                <input type="radio" name="task-execution-mode" value="process" />
-                <span>过程导向</span>
-              </label>
-            </div>
-            <label class="task-field">
-              <span>过程间隔</span>
-              <select data-task-segment-minutes>
-                <option value="5">5 分钟</option>
-                <option value="10" selected>10 分钟</option>
-                <option value="15">15 分钟</option>
-              </select>
-            </label>
-            ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
-            <button class="settings-action-button" data-action="start-task" ${state.ui.isSending ? 'disabled' : ''}>开始任务</button>
           </div>
           ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
@@ -456,49 +459,51 @@ export const createAppMarkup = (state: GameState): string => {
               <h1>接下来做什么</h1>
             </div>
           </header>
-          <section class="decision-result-card">
-            <div class="decision-result-icon">✓</div>
-            <div>
-              <h2>任务完成</h2>
-              <p>行动已经结算，新的世界状态已记录。</p>
-            </div>
-            <dl>
+          <div class="settings-scroll-content decision-scroll">
+            <section class="decision-result-card">
+              <div class="decision-result-icon">✓</div>
               <div>
-                <dt>任务评级</dt>
-                <dd>A</dd>
+                <h2>任务完成</h2>
+                <p>行动已经结算，新的世界状态已记录。</p>
               </div>
-              <div>
-                <dt>完成用时</dt>
-                <dd>${escapeHtml(state.clock.label)}</dd>
-              </div>
-              <div>
-                <dt>获得线索</dt>
-                <dd>${state.task.lastCompletedFacts.length} 条</dd>
-              </div>
-            </dl>
-          </section>
-          <div class="settings-card task-summary-card">
-            <strong>刚完成的任务</strong>
-            <p>${escapeHtml(state.task.lastCompletedSummary || '上一段行动已经结束，世界重新回到可选择的状态。')}</p>
-          </div>
-          ${
-            state.task.lastCompletedFacts.length
-              ? `
-                <div class="settings-card">
-                  <div class="settings-section-heading">
-                    <strong>留下的线索</strong>
-                    <span>${state.task.lastCompletedFacts.length} 条</span>
-                  </div>
-                  <ul class="event-detail-list">
-                    ${state.task.lastCompletedFacts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}
-                  </ul>
+              <dl>
+                <div>
+                  <dt>任务评级</dt>
+                  <dd>A</dd>
                 </div>
-              `
-              : ''
-          }
-          <div class="decision-actions">
-            <button class="settings-action-button" data-action="open-task-planning">安排新任务</button>
-            <button class="settings-action-button decision-secondary" data-action="back-to-game">回到地图探索</button>
+                <div>
+                  <dt>完成用时</dt>
+                  <dd>${escapeHtml(state.clock.label)}</dd>
+                </div>
+                <div>
+                  <dt>获得线索</dt>
+                  <dd>${state.task.lastCompletedFacts.length} 条</dd>
+                </div>
+              </dl>
+            </section>
+            <div class="settings-card task-summary-card">
+              <strong>刚完成的任务</strong>
+              <p>${escapeHtml(state.task.lastCompletedSummary || '上一段行动已经结束，世界重新回到可选择的状态。')}</p>
+            </div>
+            ${
+              state.task.lastCompletedFacts.length
+                ? `
+                  <div class="settings-card">
+                    <div class="settings-section-heading">
+                      <strong>留下的线索</strong>
+                      <span>${state.task.lastCompletedFacts.length} 条</span>
+                    </div>
+                    <ul class="event-detail-list">
+                      ${state.task.lastCompletedFacts.map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}
+                    </ul>
+                  </div>
+                `
+                : ''
+            }
+            <div class="decision-actions">
+              <button class="settings-action-button" data-action="open-task-planning">安排新任务</button>
+              <button class="settings-action-button decision-secondary" data-action="back-to-game">回到地图探索</button>
+            </div>
           </div>
           ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
@@ -518,47 +523,49 @@ export const createAppMarkup = (state: GameState): string => {
               <h1>游戏设置</h1>
             </div>
           </header>
-          <div class="settings-card">
-            <div class="settings-section-heading">
-              <strong>模型选择</strong>
-              <span>当前：${escapeHtml(state.settings.currentModel)}</span>
+          <div class="settings-scroll-content settings-panel-scroll">
+            <div class="settings-card">
+              <div class="settings-section-heading">
+                <strong>模型选择</strong>
+                <span>当前：${escapeHtml(state.settings.currentModel)}</span>
+              </div>
+              <div class="settings-option-list">
+                ${state.settings.availableModels
+                  .map(
+                    (model) =>
+                      `<button class="model-option ${model === state.settings.currentModel ? 'is-active' : ''}" data-model-id="${escapeHtml(model)}">${escapeHtml(model)}</button>`
+                  )
+                  .join('')}
+              </div>
             </div>
-            <div class="settings-option-list">
-              ${state.settings.availableModels
-                .map(
-                  (model) =>
-                    `<button class="model-option ${model === state.settings.currentModel ? 'is-active' : ''}" data-model-id="${escapeHtml(model)}">${escapeHtml(model)}</button>`
-                )
-                .join('')}
+            <div class="settings-card">
+              <div class="stream-speed-header">
+                <strong>流式输出速度</strong>
+                <span>${state.settings.streamCharsPerSecond} 字/秒 · ${streamSpeedHint}</span>
+              </div>
+              <input
+                class="stream-speed-slider"
+                data-stream-speed-slider
+                type="range"
+                min="1"
+                max="20"
+                step="1"
+                value="${state.settings.streamCharsPerSecond}"
+                aria-label="流式输出速度"
+              />
+              <div class="stream-speed-scale">
+                <span>慢</span>
+                <span>每秒</span>
+                <span>快</span>
+              </div>
             </div>
-          </div>
-          <div class="settings-card">
-            <div class="stream-speed-header">
-              <strong>流式输出速度</strong>
-              <span>${state.settings.streamCharsPerSecond} 字/秒 · ${streamSpeedHint}</span>
+            <div class="settings-card">
+              <div class="settings-section-heading">
+                <strong>线索整理</strong>
+                <span>压缩当前记忆</span>
+              </div>
+              <button class="settings-action-button" data-action="compress">整理线索</button>
             </div>
-            <input
-              class="stream-speed-slider"
-              data-stream-speed-slider
-              type="range"
-              min="1"
-              max="20"
-              step="1"
-              value="${state.settings.streamCharsPerSecond}"
-              aria-label="流式输出速度"
-            />
-            <div class="stream-speed-scale">
-              <span>慢</span>
-              <span>每秒</span>
-              <span>快</span>
-            </div>
-          </div>
-          <div class="settings-card">
-            <div class="settings-section-heading">
-              <strong>线索整理</strong>
-              <span>压缩当前记忆</span>
-            </div>
-            <button class="settings-action-button" data-action="compress">整理线索</button>
           </div>
           ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
@@ -666,6 +673,8 @@ export const createAppMarkup = (state: GameState): string => {
           state,
           canUseEventInput
             ? `${appTopTitle} · ${visibleActiveEvent ? '事件中' : '待开场'} · ${state.settings.currentModel}`
+            : isGeneratingSceneEvent
+              ? `${appTopTitle} · 生成中 · ${state.settings.currentModel}`
             : appTopTitle
         )}
         <div class="visual-card">
@@ -705,9 +714,9 @@ export const createAppMarkup = (state: GameState): string => {
           </div>
         </div>
       </section>
-      <section class="dialogue-panel ${canUseEventInput ? 'dialogue-panel--event' : ''}" data-testid="dialogue-panel">
+      <section class="dialogue-panel ${canUseEventInput ? 'dialogue-panel--event' : ''} ${isGeneratingSceneEvent ? 'dialogue-panel--scene-generating' : ''}" data-testid="dialogue-panel">
         ${
-          canUseEventInput
+          canUseEventInput || isGeneratingSceneEvent
             ? ''
             : `
               <header class="status-row">

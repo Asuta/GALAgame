@@ -93,8 +93,20 @@ select:focus-visible {
 
 .phone-frame--settings {
   width: min(100vw, 430px);
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  min-height: 0;
   grid-template-rows: 1fr;
+  overflow: hidden;
   padding: 10px;
+}
+
+.phone-frame--settings > .settings-page {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
 }
 
 .phone-frame--event {
@@ -483,6 +495,10 @@ select:focus-visible {
 }
 
 .dialogue-panel--event {
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+
+.dialogue-panel--scene-generating {
   grid-template-rows: minmax(0, 1fr) auto auto;
 }
 
@@ -904,14 +920,27 @@ select:focus-visible {
 .settings-page {
   min-height: 0;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   display: grid;
-  align-content: start;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
   gap: 10px;
   padding: 14px;
   background:
     linear-gradient(180deg, rgba(17, 23, 31, 0.98), rgba(8, 11, 15, 0.99)),
     var(--panel);
+}
+
+.settings-scroll-content {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .settings-header {
@@ -1015,6 +1044,12 @@ select:focus-visible {
 
 .task-page {
   min-height: 0;
+}
+
+.task-page:not(.task-running-page) {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  overflow: hidden;
 }
 
 .task-running-page {
@@ -1322,14 +1357,24 @@ select:focus-visible {
 }
 
 .event-details-page {
-  min-height: calc(100vh - 32px);
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  overflow: hidden;
 }
 
 .event-details-scroll {
-  display: grid;
-  align-content: start;
-  gap: 12px;
+  display: block;
   padding-right: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.event-details-scroll > * + * {
+  margin-top: 12px;
 }
 
 .event-detail-summary {
@@ -1521,6 +1566,10 @@ select:focus-visible {
   }
 
   .dialogue-panel--event {
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+
+  .dialogue-panel--scene-generating {
     grid-template-rows: minmax(0, 1fr) auto auto;
   }
 
