@@ -242,7 +242,7 @@ export const createAppMarkup = (state: GameState): string => {
       </div>
     `
     : '';
-  const displayedChoiceButtons = currentScene && !visibleActiveEvent && !visiblePreparedEvent ? '' : choiceButtons;
+  const displayedChoiceButtons = currentScene ? '' : choiceButtons;
   const bottomNav = renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) });
 
   if (state.ui.currentPage === 'task-planning') {
@@ -313,24 +313,19 @@ export const createAppMarkup = (state: GameState): string => {
           Math.max(0, Math.round(((task.currentMinutes - task.startMinutes) / (task.endMinutes - task.startMinutes)) * 100))
         )
       : 0;
-    const taskProgressChips = task
-      ? task.segments
-          .map(
-            (segment) => `
-              <span>${escapeHtml(segment.fromLabel.replace(':00', ''))}-${escapeHtml(segment.toLabel.replace(':00', ''))}</span>
-            `
-          )
-          .join('')
-      : '';
-
     return `
-      <div class="phone-frame phone-frame--settings">
-        <section class="settings-page task-page" data-testid="task-running-page">
-          ${renderAppTopBar(state, '任务流程')}
+      <div class="phone-frame phone-frame--settings phone-frame--task-running">
+        <section class="settings-page task-page task-running-page" data-testid="task-running-page">
+          ${renderAppTopBar(
+            state,
+            task
+              ? `${task.executionMode === 'result' ? '结果导向' : '过程导向'} · ${task.controlMode === 'manual' ? '手动托管' : '自动执行'} · 进度 ${taskProgress}%`
+              : '任务流程'
+          )}
           <header class="settings-header">
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
-              <p>${escapeHtml(task ? `${formatMinutesClockLabel(task.currentMinutes)} / ${formatMinutesClockLabel(task.endMinutes)}` : state.clock.label)}</p>
+              <p>${escapeHtml(task ? `${formatMinutesClockLabel(task.startMinutes)} / ${formatMinutesClockLabel(task.endMinutes)}` : state.clock.label)}</p>
               <h1>${escapeHtml(task?.title ?? '任务执行中')}</h1>
             </div>
           </header>
@@ -380,26 +375,6 @@ export const createAppMarkup = (state: GameState): string => {
                   </div>
                   ${taskImageError ? `<div class="event-image-error" role="alert">出图失败：${escapeHtml(taskImageError)}</div>` : ''}
                 </section>
-                <div class="settings-card task-summary-card">
-                  <div class="task-meta-row">
-                    <span>${task.executionMode === 'result' ? '结果导向' : '过程导向'}</span>
-                    <span>${task.controlMode === 'manual' ? '手动托管' : '自动执行'}</span>
-                  </div>
-                  <p>${escapeHtml(task.content)}</p>
-                </div>
-                <section class="task-progress-panel" style="--task-progress: ${taskProgress}%">
-                  <div class="task-progress-header">
-                    <strong>当前阶段：${escapeHtml(formatMinutesClockLabel(task.currentMinutes))}</strong>
-                    <span>进度 ${taskProgress}%</span>
-                  </div>
-                  <div class="task-progress-track" aria-hidden="true"><span></span></div>
-                  <div class="task-progress-chips">
-                    ${
-                      taskProgressChips ||
-                      `<span>${escapeHtml(formatMinutesClockLabel(task.startMinutes).slice(-5))}-${escapeHtml(formatMinutesClockLabel(task.endMinutes).slice(-5))}</span>`
-                    }
-                  </div>
-                </section>
                 <article class="task-log" data-chat-history>
                   ${
                     task.segments.length
@@ -428,20 +403,31 @@ export const createAppMarkup = (state: GameState): string => {
                   }
                   ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
                 </article>
-                <div class="input-row">
-                  <textarea placeholder="手动托管时输入你的介入内容。" ${task.controlMode === 'manual' && !state.ui.isSending ? '' : 'disabled'}></textarea>
+                <div class="input-row task-input-row ${task.controlMode === 'manual' ? '' : 'task-input-row--auto'}">
+                  ${
+                    task.controlMode === 'manual'
+                      ? `<textarea placeholder="手动托管时输入你的介入内容。" ${!state.ui.isSending ? '' : 'disabled'}></textarea>`
+                      : ''
+                  }
                   <div class="action-row task-action-row">
                     ${
                       task.executionMode === 'process'
-                        ? `
-                          <button data-action="task-next-segment" ${state.ui.isSending || task.controlMode === 'manual' || task.currentMinutes >= task.endMinutes ? 'disabled' : ''}>下一段</button>
-                          <button data-action="task-manual-mode" ${state.ui.isSending || task.controlMode === 'manual' ? 'disabled' : ''}>手动接管</button>
-                          <button data-action="task-auto-mode" ${state.ui.isSending || task.controlMode === 'auto' ? 'disabled' : ''}>交还自动</button>
-                        `
+                        ? task.controlMode === 'manual'
+                          ? `
+                            <button data-action="task-auto-mode" ${state.ui.isSending ? 'disabled' : ''}>交还自动</button>
+                          `
+                          : `
+                            <button data-action="task-next-segment" ${state.ui.isSending || task.currentMinutes >= task.endMinutes ? 'disabled' : ''}>下一段</button>
+                            <button data-action="task-manual-mode" ${state.ui.isSending ? 'disabled' : ''}>手动接管</button>
+                          `
                         : ''
                     }
                     <button data-action="task-finish" ${state.ui.isSending ? 'disabled' : ''}>完成任务</button>
-                    <button data-action="task-send" ${task.controlMode === 'manual' && !state.ui.isSending ? '' : 'disabled'}>发送</button>
+                    ${
+                      task.controlMode === 'manual'
+                        ? `<button data-action="task-send" ${!state.ui.isSending ? '' : 'disabled'}>发送</button>`
+                        : ''
+                    }
                   </div>
                 </div>
               `
@@ -676,7 +662,12 @@ export const createAppMarkup = (state: GameState): string => {
   return `
     <div class="phone-frame ${frameModeClass}">
       <section class="visual-panel" data-testid="visual-panel">
-        ${renderAppTopBar(state, appTopTitle)}
+        ${renderAppTopBar(
+          state,
+          canUseEventInput
+            ? `${appTopTitle} · ${visibleActiveEvent ? '事件中' : '待开场'} · ${state.settings.currentModel}`
+            : appTopTitle
+        )}
         <div class="visual-card">
           <p class="visual-label">${escapeHtml(visualSelection.locationLabel)}</p>
           <div class="visual-stage visual-stage--${visualSelection.mode}${visualSelection.isGeneratedEventImage ? ' visual-stage--event-generated' : ''}${isGeneratingEventImage ? ' visual-stage--image-generating' : ''}">
@@ -714,24 +705,36 @@ export const createAppMarkup = (state: GameState): string => {
           </div>
         </div>
       </section>
-      <section class="dialogue-panel" data-testid="dialogue-panel">
-        <header class="status-row">
-          <div>
-            <strong>${escapeHtml(currentRegion?.name ?? '城市')}</strong>
-            <span>${currentScene ? ` / ${escapeHtml(currentScene.name)}` : ''}</span>
-          </div>
-          <div class="status-tools">
-            <span class="time-pill">${escapeHtml(state.clock.label)}</span>
-            <span class="mode-pill">${escapeHtml(visibleActiveEvent ? '事件中' : visiblePreparedEvent ? '待开场' : '探索中')}</span>
-            <span class="model-toggle">${escapeHtml(state.settings.currentModel)}</span>
-          </div>
-        </header>
+      <section class="dialogue-panel ${canUseEventInput ? 'dialogue-panel--event' : ''}" data-testid="dialogue-panel">
+        ${
+          canUseEventInput
+            ? ''
+            : `
+              <header class="status-row">
+                <div>
+                  <strong>${escapeHtml(currentRegion?.name ?? '城市')}</strong>
+                  <span>${currentScene ? ` / ${escapeHtml(currentScene.name)}` : ''}</span>
+                </div>
+                <div class="status-tools">
+                  <span class="time-pill">${escapeHtml(state.clock.label)}</span>
+                  <span class="mode-pill">${escapeHtml(visibleActiveEvent ? '事件中' : visiblePreparedEvent ? '待开场' : '探索中')}</span>
+                  <span class="model-toggle">${escapeHtml(state.settings.currentModel)}</span>
+                </div>
+              </header>
+            `
+        }
         <article class="story-box" data-chat-history>
           ${historyMarkup || loadingPlaceholder || `<div class="story-placeholder">${escapeHtml(emptyPrompt)}</div>`}
           ${eventImageErrorMarkup}
           ${streamingMarkup}
         </article>
-        ${displayedChoiceButtons ? `<div class="choices ${mapOverlayButtons ? 'choices--compact' : ''}">${displayedChoiceButtons}</div>` : ''}
+        ${
+          displayedChoiceButtons
+            ? `<div class="choices ${mapOverlayButtons ? 'choices--compact' : ''}">${displayedChoiceButtons}</div>`
+            : choiceButtons
+              ? `<div class="choices choices--hidden" aria-hidden="true">${choiceButtons}</div>`
+              : ''
+        }
         ${
           canUseEventInput
             ? `

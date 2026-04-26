@@ -98,7 +98,7 @@ select:focus-visible {
 }
 
 .phone-frame--event {
-  grid-template-rows: clamp(255px, 41dvh, 355px) minmax(0, 1fr);
+  grid-template-rows: clamp(340px, 42dvh, 370px) minmax(0, 1fr);
 }
 
 .phone-frame--scene {
@@ -107,6 +107,11 @@ select:focus-visible {
 
 .phone-frame--map {
   grid-template-rows: minmax(300px, 48dvh) minmax(0, 1fr);
+}
+
+.phone-frame--task-running {
+  height: 100vh;
+  height: 100dvh;
 }
 
 .visual-panel {
@@ -477,6 +482,10 @@ select:focus-visible {
     var(--panel);
 }
 
+.dialogue-panel--event {
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+
 .status-row,
 .action-row,
 .status-tools,
@@ -682,6 +691,10 @@ select:focus-visible {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+
+.choices--hidden {
+  display: none;
 }
 
 .choices--compact .choice-button {
@@ -1001,16 +1014,49 @@ select:focus-visible {
 }
 
 .task-page {
-  min-height: calc(100vh - 32px);
+  min-height: 0;
+}
+
+.task-running-page {
+  height: 100%;
+  overflow: hidden;
+  align-content: stretch;
+  grid-template-rows:
+    auto
+    auto
+    clamp(255px, 36dvh, 315px)
+    minmax(0, 1fr)
+    auto
+    auto;
+}
+
+.task-running-page .settings-header {
+  min-height: 44px;
+}
+
+.task-running-page .settings-header h1 {
+  font-size: 22px;
+  line-height: 1.05;
+}
+
+.task-running-page .settings-header p {
+  font-size: 12px;
+}
+
+.task-running-page .settings-back-button {
+  width: 38px;
+  height: 38px;
 }
 
 .task-visual-card {
-  min-height: 274px;
+  min-height: 0;
   padding: 12px;
+  overflow: hidden;
 }
 
 .task-visual-card .visual-stage {
-  height: 230px;
+  height: auto;
+  min-height: 0;
 }
 
 .task-visual-placeholder {
@@ -1029,6 +1075,18 @@ select:focus-visible {
 .task-form-card,
 .task-summary-card {
   gap: 14px;
+}
+
+.task-summary-card--compact {
+  gap: 8px;
+  padding: 11px 13px;
+}
+
+.task-summary-card--compact p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
 }
 
 .task-field {
@@ -1083,8 +1141,9 @@ select:focus-visible {
 .task-log {
   display: grid;
   align-content: start;
-  gap: 10px;
-  max-height: 44vh;
+  gap: 8px;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1092,8 +1151,8 @@ select:focus-visible {
 .task-progress-panel,
 .decision-result-card {
   display: grid;
-  gap: 10px;
-  padding: 13px;
+  gap: 6px;
+  padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.045);
@@ -1109,7 +1168,7 @@ select:focus-visible {
 
 .task-progress-header strong {
   color: var(--muted-strong);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .task-progress-header span {
@@ -1119,7 +1178,7 @@ select:focus-visible {
 }
 
 .task-progress-track {
-  height: 8px;
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -1135,20 +1194,28 @@ select:focus-visible {
 }
 
 .task-progress-chips {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
 .task-progress-chips span {
   display: grid;
   place-items: center;
-  min-height: 30px;
+  min-height: 26px;
   border: 1px solid rgba(53, 217, 242, 0.2);
   border-radius: var(--radius);
   background: rgba(53, 217, 242, 0.07);
   color: var(--muted-strong);
   font-size: 12px;
+}
+
+.task-input-row--auto {
+  gap: 0;
+}
+
+.task-input-row--auto .task-action-row {
+  margin-top: 0;
 }
 
 .task-segment-card {
@@ -1170,11 +1237,14 @@ select:focus-visible {
 }
 
 .task-action-row {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex-wrap: initial;
+  gap: 8px;
 }
 
 .task-action-row button {
-  flex: 1 1 120px;
+  flex: initial;
 }
 
 .decision-actions {
@@ -1427,7 +1497,7 @@ select:focus-visible {
   }
 
   .phone-frame--event {
-    grid-template-rows: clamp(250px, 40dvh, 340px) minmax(0, 1fr);
+    grid-template-rows: clamp(335px, 42dvh, 360px) minmax(0, 1fr);
   }
 
   .phone-frame--scene {
@@ -1448,6 +1518,10 @@ select:focus-visible {
     min-height: 0;
     margin: 0;
     grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  }
+
+  .dialogue-panel--event {
+    grid-template-rows: minmax(0, 1fr) auto auto;
   }
 
   .status-row {
@@ -1490,7 +1564,7 @@ select:focus-visible {
   }
 
   .phone-frame--event {
-    grid-template-rows: clamp(240px, 39dvh, 320px) minmax(0, 1fr);
+    grid-template-rows: clamp(335px, 42dvh, 360px) minmax(0, 1fr);
   }
 
   .visual-panel {
@@ -1551,6 +1625,14 @@ select:focus-visible {
   .action-row button {
     min-height: 36px;
     padding: 7px 8px;
+  }
+
+  .task-action-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .task-action-row button {
+    font-size: 13px;
   }
 
   .bottom-nav {
