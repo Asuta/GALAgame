@@ -54,6 +54,7 @@ describe('imageClient', () => {
   it('normalizes image sizes and rejects invalid sizes', () => {
     expect(normalizeImageSize('1024x1024')).toBe('1024*1024');
     expect(normalizeImageSize('720*1280')).toBe('720*1280');
+    expect(normalizeImageSize('1280x800')).toBe('1280*800');
     expect(() => normalizeImageSize('vertical')).toThrow('Invalid image size');
   });
 
@@ -101,6 +102,7 @@ describe('imageClient', () => {
     });
 
     expect(prompt).toContain('现代恋爱向视觉小说事件插图');
+    expect(prompt).toContain('横屏 16:10 构图');
     expect(prompt).toContain('请生成当前剧情这一刻的画面');
     expect(prompt).toContain('学校 / 教室');
     expect(prompt).toContain('林澄');
@@ -148,6 +150,10 @@ describe('imageClient', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer image-key' })
       })
     );
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    expect(payload.parameters.size).toBe('1280*800');
+    expect(payload.input.messages[0].content.at(-1).text).toContain('横屏 16:10 构图');
   });
 
   it('builds a task image prompt from the current task process', () => {
@@ -180,6 +186,7 @@ describe('imageClient', () => {
     });
 
     expect(prompt).toContain('现代恋爱向视觉小说任务插图');
+    expect(prompt).toContain('横屏 16:10 构图');
     expect(prompt).toContain('去主题咖啡店玩一玩');
     expect(prompt).not.toContain('你靠窗坐下');
     expect(prompt).not.toContain('手机突然震动了一下');
@@ -245,7 +252,9 @@ describe('imageClient', () => {
       })
     ]);
     expect(payload.input.messages[0].content[0].text).toContain('高质量二次元动漫视觉小说 CG 插画风格');
+    expect(payload.input.messages[0].content[0].text).toContain('横屏 16:10 构图');
     expect(payload.input.messages[0].content[0].text).toContain('禁止真实照片');
+    expect(payload.parameters.size).toBe('1280*800');
   });
 
   it('downloads reference image urls as data urls before sending the generation request', async () => {

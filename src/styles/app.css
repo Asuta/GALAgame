@@ -943,6 +943,15 @@ select:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
+.decision-scroll {
+  display: block;
+  padding-bottom: 72px;
+}
+
+.decision-scroll > * + * {
+  margin-top: 12px;
+}
+
 .settings-header {
   display: flex;
   align-items: center;
@@ -1092,6 +1101,15 @@ select:focus-visible {
 .task-visual-card .visual-stage {
   height: auto;
   min-height: 0;
+}
+
+.decision-visual-card {
+  min-height: 0;
+}
+
+.decision-visual-card .visual-stage {
+  min-height: 230px;
+  aspect-ratio: 16 / 10;
 }
 
 .task-visual-placeholder {

@@ -156,6 +156,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
   let shouldAutoScrollHistory = true;
   let preservedHistoryScrollTop = 0;
   let streamRevealBoostCharacters = 0;
+  let taskStreamRevealBoostCharacters = 0;
 
   const updateHistoryScrollPreference = (history: HTMLElement): void => {
     const maxScrollTop = Math.max(history.scrollHeight - history.clientHeight, 0);
@@ -187,6 +188,23 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     }
 
     streamingContent.textContent = state.event.streamingReply;
+    const cursor = document.createElement('span');
+    cursor.className = 'stream-cursor';
+    streamingContent.append(cursor);
+    applyHistoryScrollPosition(history);
+    return true;
+  };
+
+  const updateTaskStreamingReplyDom = (): boolean => {
+    const history = root.querySelector<HTMLElement>('[data-chat-history]');
+    const streamingContent = root.querySelector<HTMLElement>('[data-task-streaming-content]');
+    const task = state.task.activeTask;
+
+    if (!history || !streamingContent || state.ui.mode !== 'task' || !task) {
+      return false;
+    }
+
+    streamingContent.textContent = task.streamingReply;
     const cursor = document.createElement('span');
     cursor.className = 'stream-cursor';
     streamingContent.append(cursor);
@@ -387,7 +405,52 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     rerender();
   };
 
-  const generateCurrentTaskImage = async () => {
+  const streamTaskText = async (text: string, label = '世界') => {
+    taskStreamRevealBoostCharacters = 0;
+    state = startTaskStreamingReply(state, label);
+    rerender();
+
+    await appendStreamWithRateLimit({
+      source: (async function* () {
+        yield text;
+      })(),
+      getCharsPerSecond: () => state.settings.streamCharsPerSecond,
+      shouldSkipRateLimit: () => {
+        if (taskStreamRevealBoostCharacters <= 0) {
+          return false;
+        }
+
+        taskStreamRevealBoostCharacters -= 1;
+        return true;
+      },
+      onCharacter: (character) => {
+        state = appendTaskStreamingReply(state, character);
+        if (!updateTaskStreamingReplyDom()) {
+          rerender();
+        }
+      }
+    });
+  };
+
+  const clearTaskStreamingDraft = (): void => {
+    if (!state.task.activeTask) {
+      return;
+    }
+
+    state = {
+      ...state,
+      task: {
+        ...state.task,
+        activeTask: {
+          ...state.task.activeTask,
+          streamingReply: '',
+          streamingLabel: ''
+        }
+      }
+    };
+  };
+
+  const generateCurrentTaskImage = async (options: { rerenderDuringGeneration?: boolean } = {}) => {
     const task = state.task.activeTask;
 
     if (!task || task.imageGeneration.isGenerating) {
@@ -396,9 +459,12 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     const taskId = task.id;
     const locationLabel = resolveLocationLabel(state);
+    const shouldRerenderDuringGeneration = options.rerenderDuringGeneration ?? true;
 
     state = startTaskImageGeneration(state);
-    rerender();
+    if (shouldRerenderDuringGeneration) {
+      rerender();
+    }
 
     try {
       const latestTask = state.task.activeTask ?? task;
@@ -428,7 +494,9 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       }
     }
 
-    rerender();
+    if (shouldRerenderDuringGeneration) {
+      rerender();
+    }
   };
 
   const completeActiveTask = async () => {
@@ -491,12 +559,18 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         memoryFacts: state.memory.facts,
         locationLabel: resolveLocationLabel(state)
       });
+
+      await streamTaskText(segment.content, '世界');
+      clearTaskStreamingDraft();
       state = appendTaskSegment(state, segment, toMinutes);
+      rerender();
 
       if (toMinutes >= task.endMinutes) {
         const nextTask = state.task.activeTask;
 
         if (nextTask) {
+          state = startTaskRequest(state);
+          rerender();
           const settlement = await requestTaskFinalSummary({
             model: state.settings.currentModel,
             task: nextTask,
@@ -554,6 +628,19 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       executionMode,
       segmentMinutes
     });
+
+    if (executionMode === 'result') {
+      state = {
+        ...state,
+        ui: {
+          ...state.ui,
+          currentPage: 'task-planning',
+          mode: 'task',
+          isSending: true
+        }
+      };
+    }
+
     rerender();
 
     const task = state.task.activeTask;
@@ -563,19 +650,21 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     }
 
     try {
-      await generateCurrentTaskImage();
-
       if (executionMode === 'result') {
-        const settlement = await requestTaskResult({
-          model: state.settings.currentModel,
-          task,
-          timeLabel: state.clock.label,
-          memorySummary: state.memory.summary,
-          memoryFacts: state.memory.facts,
-          locationLabel: resolveLocationLabel(state)
-        });
+        const [settlement] = await Promise.all([
+          requestTaskResult({
+            model: state.settings.currentModel,
+            task,
+            timeLabel: state.clock.label,
+            memorySummary: state.memory.summary,
+            memoryFacts: state.memory.facts,
+            locationLabel: resolveLocationLabel(state)
+          }),
+          generateCurrentTaskImage({ rerenderDuringGeneration: false })
+        ]);
         state = completeTask(state, settlement.summary, settlement.facts);
       } else {
+        await generateCurrentTaskImage();
         state = finishTaskRequest(state);
         rerender();
         await generateNextTaskSegment();
@@ -601,6 +690,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       label: '你',
       content: playerInput
     });
+    taskStreamRevealBoostCharacters = 0;
     state = startTaskStreamingReply(state, '世界');
     rerender();
 
@@ -615,10 +705,19 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
           locationLabel: resolveLocationLabel(state)
         }),
         getCharsPerSecond: () => state.settings.streamCharsPerSecond,
-        shouldSkipRateLimit: () => false,
+        shouldSkipRateLimit: () => {
+          if (taskStreamRevealBoostCharacters <= 0) {
+            return false;
+          }
+
+          taskStreamRevealBoostCharacters -= 1;
+          return true;
+        },
         onCharacter: (character) => {
           state = appendTaskStreamingReply(state, character);
-          rerender();
+          if (!updateTaskStreamingReplyDom()) {
+            rerender();
+          }
         }
       });
 
@@ -687,7 +786,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     });
 
     const submitCurrentInput = () => {
-      const input = root.querySelector<HTMLTextAreaElement>('textarea');
+      const input = root.querySelector<HTMLTextAreaElement>('.input-row textarea');
       const value = input?.value.trim();
       const visibleActiveEvent = getVisibleActiveEvent(state);
       const visiblePreparedEvent = getVisiblePreparedEvent(state);
@@ -698,6 +797,17 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
       input.value = '';
       void runEventTurn(value, 'continue');
+    };
+
+    const submitTaskInput = () => {
+      const input = root.querySelector<HTMLTextAreaElement>('.task-input-row textarea');
+      const value = input?.value.trim() ?? '';
+
+      if (input) {
+        input.value = '';
+      }
+
+      void runTaskManualTurn(value);
     };
 
     root.querySelectorAll<HTMLButtonElement>('[data-region-id]').forEach((button) => {
@@ -766,14 +876,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="task-send"]')?.addEventListener('click', () => {
-      const input = root.querySelector<HTMLTextAreaElement>('textarea');
-      const value = input?.value.trim() ?? '';
-
-      if (input) {
-        input.value = '';
-      }
-
-      void runTaskManualTurn(value);
+      submitTaskInput();
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="continue-story"]')?.addEventListener('click', () => {
@@ -864,9 +967,38 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       revealCurrentStream();
     });
 
-    root.querySelector<HTMLTextAreaElement>('textarea')?.addEventListener('keydown', (event) => {
+    const revealCurrentTaskStream = () => {
+      const task = state.task.activeTask;
+
+      if (!state.ui.isSending || !task?.streamingReply) {
+        return;
+      }
+
+      taskStreamRevealBoostCharacters += STREAM_REVEAL_BOOST_CHARS;
+    };
+
+    root.querySelector<HTMLElement>('[data-task-streaming-bubble]')?.addEventListener('click', () => {
+      revealCurrentTaskStream();
+    });
+
+    root.querySelector<HTMLElement>('[data-task-streaming-bubble]')?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+
+      event.preventDefault();
+      revealCurrentTaskStream();
+    });
+
+    root.querySelector<HTMLTextAreaElement>('.input-row textarea')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
+
+        if (state.ui.mode === 'task') {
+          submitTaskInput();
+          return;
+        }
+
         submitCurrentInput();
       }
     });

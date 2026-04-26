@@ -116,6 +116,19 @@ const waitForText = async (text: string) => {
   throw new Error(`Timed out waiting for text: ${text}`);
 };
 
+const waitForNoElement = async (selector: string) => {
+  for (let index = 0; index < 40; index += 1) {
+    if (!document.querySelector(selector)) {
+      return;
+    }
+
+    await waitForStreamFrame();
+    await flushUi();
+  }
+
+  throw new Error(`Timed out waiting for element to disappear: ${selector}`);
+};
+
 const createDeferred = <T>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -608,12 +621,15 @@ describe('bindUi scene switching', () => {
     expect(requestTaskImagePromptMock.mock.calls[0][0].task.content).toBe('晨跑一小时');
     expect(requestGeneratedTaskImageMock.mock.calls[0][0].prompt).toContain('模型重写的任务生图提示词');
     expect(document.querySelector('[data-testid="task-running-page"]')).not.toBeNull();
+    await waitForText('途中出现一个小插曲');
     expect(document.body.textContent).toContain('途中出现一个小插曲');
     expect(document.querySelector('[data-testid="task-visual-image"]')?.getAttribute('src')).toBe('https://example.com/generated-task.png');
 
     (document.querySelector('[data-action="task-next-segment"]') as HTMLButtonElement).click();
     await flushUi();
     await flushUi();
+    await waitForText('18:10 到 18:20');
+    await waitForNoElement('[data-task-streaming-bubble]');
 
     expect(requestTaskSegmentMock).toHaveBeenCalledTimes(2);
     expect(requestTaskImagePromptMock).toHaveBeenCalledOnce();
@@ -631,7 +647,7 @@ describe('bindUi scene switching', () => {
     await flushUi();
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     textarea.value = '我放慢脚步看看是谁。';
-    (document.querySelector('[data-action="task-send"]') as HTMLButtonElement).click();
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await flushUi();
     await waitForText('旁白：你停下来确认那阵脚步声。');
 
@@ -657,5 +673,35 @@ describe('bindUi scene switching', () => {
     expect(document.querySelector('[data-testid="decision-page"]')).toBeNull();
     expect(document.querySelector('[data-testid="dialogue-panel"]')).not.toBeNull();
     expect(document.body.textContent).toContain('选择一个区域');
+  });
+
+  it('runs a result-oriented task directly to the decision page with its image', async () => {
+    const resultDeferred = createDeferred<{ summary: string; facts: string[] }>();
+    requestTaskResultMock.mockReturnValueOnce(resultDeferred.promise);
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-action="open-task-planning"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const contentInput = document.querySelector('[data-task-content]') as HTMLTextAreaElement;
+    contentInput.value = '在早上整理书包';
+    (document.querySelector('[data-action="start-task"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.querySelector('[data-testid="task-running-page"]')).toBeNull();
+    expect(document.querySelector('[data-testid="task-planning-page"]')).not.toBeNull();
+    expect(requestTaskSegmentMock).not.toHaveBeenCalled();
+
+    resultDeferred.resolve({
+      summary: '整理书包之后，你确认今天要带的东西都准备好了。',
+      facts: ['整理好了书包']
+    });
+    await flushUi();
+    await flushUi();
+
+    expect(document.querySelector('[data-testid="decision-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('整理书包之后');
+    expect(document.querySelector('[data-testid="decision-task-visual-image"]')?.getAttribute('src')).toBe('https://example.com/generated-task.png');
   });
 });

@@ -1,12 +1,12 @@
 import type { GeneratedEvent, Scene, TaskRuntime } from '../data/types';
 
 const DEFAULT_IMAGE_MODEL = 'qwen-image-2.0';
-const DEFAULT_IMAGE_SIZE = '720*1280';
+const DEFAULT_IMAGE_SIZE = '1280*800';
 const DEFAULT_IMAGE_ENDPOINT = 'https://token.fun.tv/v1/images/generations';
 const DEFAULT_NEGATIVE_PROMPT =
   '真实照片，真人摄影，写实摄影，电影剧照，3D渲染，欧美写实，低清晰度，模糊，畸形手指，多余手指，多余肢体，文字，水印，logo，低质量';
 const UNIFIED_ANIME_STYLE_PROMPT =
-  '统一画风：高质量二次元动漫视觉小说 CG 插画风格，竖屏 9:16 构图，清晰角色线稿，柔和赛璐璐上色，干净细节，完整场景背景，叙事感强。禁止真实照片、真人摄影、写实摄影、电影剧照、3D 渲染、欧美写实风格。';
+  '统一画风：高质量二次元动漫视觉小说 CG 插画风格，横屏 16:10 构图，适合视觉小说横向画面窗口，清晰角色线稿，柔和赛璐璐上色，干净细节，完整场景背景，叙事感强。禁止真实照片、真人摄影、写实摄影、电影剧照、3D 渲染、欧美写实风格。';
 
 export interface ImageGenerationPayload {
   model: string;
@@ -215,7 +215,7 @@ export const buildEventImagePrompt = ({
   const recentMemoryFacts = memoryFacts.slice(-6);
 
   return [
-    '现代恋爱向视觉小说事件插图，竖屏 9:16 构图。',
+    '现代恋爱向视觉小说事件插图，横屏 16:10 构图，适合偏横向的游戏图片窗口。',
     '请生成当前剧情这一刻的画面，不要回到事件开场，也不要画成泛用场景。',
     `地点：${locationLabel}。`,
     `主要角色：${cast}。`,
@@ -229,7 +229,7 @@ export const buildEventImagePrompt = ({
     `关键记忆：${recentMemoryFacts.length ? recentMemoryFacts.join('；') : '暂无。'}`,
     `氛围关键词：${tones}。`,
     '画面需要优先表现最近对话和当前阶段里的动作、距离、情绪和构图。',
-    '画面需要包含完整场景背景和自然融入画面的角色，像游戏 CG 一样有叙事感。',
+    '画面需要包含完整场景背景和自然融入画面的角色，人物不要顶满画面，避免半身被裁切，像游戏 CG 一样有叙事感。',
     '高质量二次元动漫视觉小说 CG 风格，柔和光影，干净细节，不要文字，不要 UI，不要水印，不要真实照片或写实摄影。'
   ].join('\n');
 };
@@ -247,7 +247,7 @@ export const buildTaskImagePrompt = ({
   const visualMoment = `当前画面：玩家正在执行“${safeTaskContent}”，画面聚焦公开场所里的日常行动、人物状态、环境氛围和时间感。`;
 
   return [
-    '现代恋爱向视觉小说任务插图，竖屏 9:16 构图。',
+    '现代恋爱向视觉小说任务插图，横屏 16:10 构图，适合偏横向的游戏图片窗口。',
     '请生成全年龄、安全、日常向的画面；如果原任务含有暧昧、违规或成人暗示，请改写成普通公开场所里的主题体验。',
     '不要表现违法、成人服务、性暗示、暴力伤害、未成年人不当内容；不要画成 UI 截图，不要出现文字、水印或 logo。',
     `当前位置：${safeLocationLabel}。`,
@@ -258,6 +258,7 @@ export const buildTaskImagePrompt = ({
     '画面小细节：可以加入菜单、街景、窗边座位、手机、饮品、路灯等安全日常物件。',
     `世界记忆摘要：${safeMemorySummary || '暂无。'}`,
     '画面只需要表现一个安全、清晰、可视化的当前瞬间，不要复述任务日志，不要加入额外剧情。',
+    '人物需要完整融入横向场景，不要竖屏全身肖像式构图，不要让头部、腿部或主体被窗口裁掉。',
     '画面需要优先表现任务本身的动作、地点、时间氛围和人物状态；如果有插曲，只作为画面里的小细节处理。',
     '高质量二次元动漫视觉小说 CG 风格，完整背景，自然光影，叙事感强，干净细节，不要真实照片或写实摄影。'
   ].join('\n');

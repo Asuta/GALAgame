@@ -397,7 +397,14 @@ export const createAppMarkup = (state: GameState): string => {
                   ${
                     task.streamingReply
                       ? `
-                        <div class="chat-message character is-streaming" data-task-streaming-bubble role="button" tabindex="0">
+                        <div
+                          class="chat-message character is-streaming"
+                          data-task-streaming-bubble
+                          role="button"
+                          tabindex="0"
+                          aria-label="点击加速显示任务文本"
+                          title="点击加速显示任务文本"
+                        >
                           <div class="chat-label">${escapeHtml(task.streamingLabel || '世界')}</div>
                           <div class="chat-content" data-task-streaming-content>${escapeHtml(task.streamingReply)}<span class="stream-cursor"></span></div>
                         </div>
@@ -448,6 +455,10 @@ export const createAppMarkup = (state: GameState): string => {
   }
 
   if (state.ui.currentPage === 'decision') {
+    const completedTask = state.task.activeTask?.status === 'completed' ? state.task.activeTask : null;
+    const completedTaskImageUrl = completedTask?.generatedImageUrl ?? null;
+    const completedTaskImageError = completedTask?.imageGeneration.error ?? null;
+
     return `
       <div class="phone-frame phone-frame--settings">
         <section class="settings-page task-page" data-testid="decision-page">
@@ -485,6 +496,35 @@ export const createAppMarkup = (state: GameState): string => {
               <strong>刚完成的任务</strong>
               <p>${escapeHtml(state.task.lastCompletedSummary || '上一段行动已经结束，世界重新回到可选择的状态。')}</p>
             </div>
+            ${
+              completedTask
+                ? `
+                  <section class="visual-card decision-visual-card" data-testid="decision-task-visual-panel">
+                    <p class="visual-label">${escapeHtml(completedTask?.title ?? '任务画面')}</p>
+                    <div class="visual-stage visual-stage--task${completedTaskImageUrl ? ' visual-stage--event-generated' : ''}">
+                      ${
+                        completedTaskImageUrl
+                          ? `
+                            <img
+                              class="visual-background"
+                              data-testid="decision-task-visual-image"
+                              src="${escapeHtml(completedTaskImageUrl)}"
+                              alt="${escapeHtml(completedTask?.title ?? '任务画面')}"
+                            />
+                          `
+                          : `
+                            <div class="task-visual-placeholder" data-testid="decision-task-visual-placeholder">
+                              ${escapeHtml(completedTaskImageError ? '任务画面生成失败' : '任务画面还没有生成')}
+                            </div>
+                          `
+                      }
+                      <div class="visual-shade"></div>
+                    </div>
+                    ${completedTaskImageError ? `<div class="event-image-error" role="alert">任务画面生成失败：${escapeHtml(completedTaskImageError)}</div>` : ''}
+                  </section>
+                `
+                : ''
+            }
             ${
               state.task.lastCompletedFacts.length
                 ? `
