@@ -47,6 +47,46 @@ const formatTimeInputValue = (minutes: number): string => {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 };
 
+const renderAppTopBar = (state: GameState, title: string): string => `
+  <header class="app-topbar">
+    <div class="app-topbar-time">${escapeHtml(state.clock.label.replace(' ', ' '))}</div>
+    <div class="app-topbar-title">${escapeHtml(title)}</div>
+    <button class="app-topbar-settings" data-action="open-settings" aria-label="打开设置" title="设置">⚙</button>
+  </header>
+`;
+
+const renderBottomNav = (state: GameState, options: { hasEventContext?: boolean } = {}): string => {
+  const isGame = state.ui.currentPage === 'game';
+  const isTask = state.ui.currentPage === 'task-planning' || state.ui.currentPage === 'task-running' || state.ui.currentPage === 'decision';
+  const hasEventContext = options.hasEventContext ?? false;
+  const canPlanTask = state.ui.mode !== 'event' && !state.ui.isSending;
+
+  return `
+    <nav class="bottom-nav" aria-label="主导航">
+      <button class="${isGame ? 'is-active' : ''}" data-action="back-to-game">
+        <span aria-hidden="true">⌂</span>
+        <small>地图</small>
+      </button>
+      <button data-action="open-event-details" ${hasEventContext ? '' : 'disabled'}>
+        <span aria-hidden="true">◇</span>
+        <small>事件</small>
+      </button>
+      <button class="${isTask ? 'is-active' : ''}" data-action="open-task-planning" ${canPlanTask ? '' : 'disabled'}>
+        <span aria-hidden="true">✓</span>
+        <small>任务</small>
+      </button>
+      <button disabled>
+        <span aria-hidden="true">●</span>
+        <small>角色</small>
+      </button>
+      <button class="${state.ui.currentPage === 'settings' ? 'is-active' : ''}" data-action="open-settings">
+        <span aria-hidden="true">⚙</span>
+        <small>设置</small>
+      </button>
+    </nav>
+  `;
+};
+
 const renderTaskSegment = (segment: NonNullable<GameState['task']['activeTask']>['segments'][number]): string => `
   <div class="task-segment-card">
     <div class="task-segment-time">
@@ -90,6 +130,11 @@ export const createAppMarkup = (state: GameState): string => {
   const choiceButtons = currentRegion ? (shouldHideSceneButtons ? '' : sceneButtons) : regionButtons;
 
   const shouldShowTranscript = !activeEvent || !!visibleActiveEvent;
+  const appTopTitle = currentScene
+    ? `${currentRegion?.name ?? '城市'} / ${currentScene.name}`
+    : currentRegion
+      ? `当前位置：${currentRegion.name}`
+      : '当前位置：夜城市';
 
   const historyMarkup = shouldShowTranscript
     ? state.event.transcript
@@ -151,6 +196,7 @@ export const createAppMarkup = (state: GameState): string => {
   const streamSpeedHint =
     state.settings.streamCharsPerSecond <= 4 ? '慢' : state.settings.streamCharsPerSecond >= 12 ? '快' : '默认';
   const visibleEventForImage = visibleActiveEvent ?? visiblePreparedEvent;
+  const canUseEventInput = !!(visibleActiveEvent || visiblePreparedEvent);
   const isGeneratingEventImage =
     !!visibleEventForImage &&
     state.ui.eventImageGeneration.eventId === visibleEventForImage.id &&
@@ -189,6 +235,15 @@ export const createAppMarkup = (state: GameState): string => {
       </button>
     `
     : '';
+  const mapOverlayButtons = !currentScene && !visibleActiveEvent && !visiblePreparedEvent
+    ? `
+      <div class="map-location-overlay">
+        ${choiceButtons}
+      </div>
+    `
+    : '';
+  const displayedChoiceButtons = currentScene && !visibleActiveEvent && !visiblePreparedEvent ? '' : choiceButtons;
+  const bottomNav = renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) });
 
   if (state.ui.currentPage === 'task-planning') {
     const startMinutes = state.clock.hour * 60 + state.clock.minute;
@@ -197,6 +252,7 @@ export const createAppMarkup = (state: GameState): string => {
     return `
       <div class="phone-frame phone-frame--settings">
         <section class="settings-page task-page" data-testid="task-planning-page">
+          ${renderAppTopBar(state, '安排任务')}
           <header class="settings-header">
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
@@ -240,6 +296,7 @@ export const createAppMarkup = (state: GameState): string => {
             ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
             <button class="settings-action-button" data-action="start-task" ${state.ui.isSending ? 'disabled' : ''}>开始任务</button>
           </div>
+          ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
       </div>
     `;
@@ -250,10 +307,26 @@ export const createAppMarkup = (state: GameState): string => {
     const taskImageUrl = task?.generatedImageUrl ?? null;
     const isGeneratingTaskImage = !!task?.imageGeneration.isGenerating;
     const taskImageError = task?.imageGeneration.error ?? null;
+    const taskProgress = task
+      ? Math.min(
+          100,
+          Math.max(0, Math.round(((task.currentMinutes - task.startMinutes) / (task.endMinutes - task.startMinutes)) * 100))
+        )
+      : 0;
+    const taskProgressChips = task
+      ? task.segments
+          .map(
+            (segment) => `
+              <span>${escapeHtml(segment.fromLabel.replace(':00', ''))}-${escapeHtml(segment.toLabel.replace(':00', ''))}</span>
+            `
+          )
+          .join('')
+      : '';
 
     return `
       <div class="phone-frame phone-frame--settings">
         <section class="settings-page task-page" data-testid="task-running-page">
+          ${renderAppTopBar(state, '任务流程')}
           <header class="settings-header">
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
@@ -314,6 +387,19 @@ export const createAppMarkup = (state: GameState): string => {
                   </div>
                   <p>${escapeHtml(task.content)}</p>
                 </div>
+                <section class="task-progress-panel" style="--task-progress: ${taskProgress}%">
+                  <div class="task-progress-header">
+                    <strong>当前阶段：${escapeHtml(formatMinutesClockLabel(task.currentMinutes))}</strong>
+                    <span>进度 ${taskProgress}%</span>
+                  </div>
+                  <div class="task-progress-track" aria-hidden="true"><span></span></div>
+                  <div class="task-progress-chips">
+                    ${
+                      taskProgressChips ||
+                      `<span>${escapeHtml(formatMinutesClockLabel(task.startMinutes).slice(-5))}-${escapeHtml(formatMinutesClockLabel(task.endMinutes).slice(-5))}</span>`
+                    }
+                  </div>
+                </section>
                 <article class="task-log" data-chat-history>
                   ${
                     task.segments.length
@@ -366,6 +452,7 @@ export const createAppMarkup = (state: GameState): string => {
                 </div>
               `
           }
+          ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
       </div>
     `;
@@ -375,6 +462,7 @@ export const createAppMarkup = (state: GameState): string => {
     return `
       <div class="phone-frame phone-frame--settings">
         <section class="settings-page task-page" data-testid="decision-page">
+          ${renderAppTopBar(state, '任务完成')}
           <header class="settings-header">
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
@@ -382,6 +470,27 @@ export const createAppMarkup = (state: GameState): string => {
               <h1>接下来做什么</h1>
             </div>
           </header>
+          <section class="decision-result-card">
+            <div class="decision-result-icon">✓</div>
+            <div>
+              <h2>任务完成</h2>
+              <p>行动已经结算，新的世界状态已记录。</p>
+            </div>
+            <dl>
+              <div>
+                <dt>任务评级</dt>
+                <dd>A</dd>
+              </div>
+              <div>
+                <dt>完成用时</dt>
+                <dd>${escapeHtml(state.clock.label)}</dd>
+              </div>
+              <div>
+                <dt>获得线索</dt>
+                <dd>${state.task.lastCompletedFacts.length} 条</dd>
+              </div>
+            </dl>
+          </section>
           <div class="settings-card task-summary-card">
             <strong>刚完成的任务</strong>
             <p>${escapeHtml(state.task.lastCompletedSummary || '上一段行动已经结束，世界重新回到可选择的状态。')}</p>
@@ -405,6 +514,7 @@ export const createAppMarkup = (state: GameState): string => {
             <button class="settings-action-button" data-action="open-task-planning">安排新任务</button>
             <button class="settings-action-button decision-secondary" data-action="back-to-game">回到地图探索</button>
           </div>
+          ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
       </div>
     `;
@@ -414,6 +524,7 @@ export const createAppMarkup = (state: GameState): string => {
     return `
       <div class="phone-frame phone-frame--settings">
         <section class="settings-page" data-testid="settings-page">
+          ${renderAppTopBar(state, '设置')}
           <header class="settings-header">
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
@@ -463,6 +574,7 @@ export const createAppMarkup = (state: GameState): string => {
             </div>
             <button class="settings-action-button" data-action="compress">整理线索</button>
           </div>
+          ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
       </div>
     `;
@@ -472,6 +584,7 @@ export const createAppMarkup = (state: GameState): string => {
     return `
       <div class="phone-frame phone-frame--settings">
         <section class="settings-page event-details-page" data-testid="event-details-page">
+          ${renderAppTopBar(state, '事件互动')}
           <header class="settings-header">
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
@@ -519,6 +632,7 @@ export const createAppMarkup = (state: GameState): string => {
               `
           }
           </div>
+          ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
       </div>
     `;
@@ -528,6 +642,7 @@ export const createAppMarkup = (state: GameState): string => {
     return `
       <div class="phone-frame phone-frame--settings">
         <section class="settings-page event-details-page" data-testid="image-prompt-page">
+          ${renderAppTopBar(state, '生图提示词')}
           <header class="settings-header">
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
@@ -546,14 +661,22 @@ export const createAppMarkup = (state: GameState): string => {
               <p>${escapeHtml(latestImagePrompt || '还没有生成过图片。回到场景后点击右下角刷新按钮生成一次图片，就能在这里查看最新提示词。')}</p>
             </div>
           </div>
+          ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>
       </div>
     `;
   }
 
+  const frameModeClass = canUseEventInput
+    ? 'phone-frame--event'
+    : currentScene
+      ? 'phone-frame--scene'
+      : 'phone-frame--map';
+
   return `
-    <div class="phone-frame">
+    <div class="phone-frame ${frameModeClass}">
       <section class="visual-panel" data-testid="visual-panel">
+        ${renderAppTopBar(state, appTopTitle)}
         <div class="visual-card">
           <p class="visual-label">${escapeHtml(visualSelection.locationLabel)}</p>
           <div class="visual-stage visual-stage--${visualSelection.mode}${visualSelection.isGeneratedEventImage ? ' visual-stage--event-generated' : ''}${isGeneratingEventImage ? ' visual-stage--image-generating' : ''}">
@@ -587,6 +710,7 @@ export const createAppMarkup = (state: GameState): string => {
             }
             ${imagePromptButton}
             ${eventImageButton}
+            ${mapOverlayButtons}
           </div>
         </div>
       </section>
@@ -607,28 +731,40 @@ export const createAppMarkup = (state: GameState): string => {
           ${eventImageErrorMarkup}
           ${streamingMarkup}
         </article>
-        <div class="choices">
-          ${choiceButtons}
-        </div>
-        <div class="input-row">
-          <textarea placeholder="输入你想说的话。第一次发送后正式进入事件；回车发送，Shift+回车换行。" ${visibleActiveEvent || visiblePreparedEvent ? '' : 'disabled'}></textarea>
-          <div class="action-row">
-            <button data-action="open-settings">设置</button>
-            <button data-action="open-task-planning" ${visibleActiveEvent || state.ui.isSending ? 'disabled' : ''}>安排任务</button>
-            <button data-action="open-event-details" ${currentScene || visibleActiveEvent ? '' : 'disabled'}>事件详情</button>
-            ${
-              visibleActiveEvent
-                ? `
-                  <button data-action="continue-story" ${!state.ui.isSending ? '' : 'disabled'}>继续剧情</button>
-                  <button data-action="end-event" ${!state.ui.isSending ? '' : 'disabled'}>结束当前事件</button>
-                `
-                : '<button data-action="back">离开地点</button>'
-            }
-            <button data-action="send" ${(visibleActiveEvent || visiblePreparedEvent) && !state.ui.isSending ? '' : 'disabled'}>
-              ${escapeHtml(state.ui.isSending ? '生成中' : '发送')}
-            </button>
-          </div>
-        </div>
+        ${displayedChoiceButtons ? `<div class="choices ${mapOverlayButtons ? 'choices--compact' : ''}">${displayedChoiceButtons}</div>` : ''}
+        ${
+          canUseEventInput
+            ? `
+              <div class="input-row">
+                <textarea placeholder="输入你的回应；回车发送，Shift+回车换行。"></textarea>
+                <div class="action-row">
+                  <button data-action="open-event-details" ${currentScene || visibleActiveEvent ? '' : 'disabled'}>事件详情</button>
+                  ${
+                    visibleActiveEvent
+                      ? `
+                        <button data-action="continue-story" ${!state.ui.isSending ? '' : 'disabled'}>继续剧情</button>
+                        <button data-action="end-event" ${!state.ui.isSending ? '' : 'disabled'}>结束事件</button>
+                      `
+                      : '<button data-action="back">离开地点</button>'
+                  }
+                  <button data-action="send" ${!state.ui.isSending ? '' : 'disabled'}>
+                    ${escapeHtml(state.ui.isSending ? '生成中' : '发送')}
+                  </button>
+                </div>
+              </div>
+            `
+            : `
+              <div class="explore-command-panel">
+                <button class="explore-primary" ${currentScene ? `data-scene-id="${escapeHtml(currentScene.id)}"` : 'disabled'}>
+                  ${escapeHtml(currentScene ? '探索事件' : '选择地点')}
+                </button>
+                <button class="explore-secondary" data-action="open-task-planning" ${state.ui.isSending ? 'disabled' : ''}>安排任务</button>
+                <button class="explore-ghost" data-action="open-event-details" ${currentScene ? '' : 'disabled'}>事件详情</button>
+                <button class="explore-ghost" data-action="back">${currentRegion ? '离开地点' : '重置地图'}</button>
+              </div>
+            `
+        }
+        ${bottomNav}
       </section>
     </div>
   `;

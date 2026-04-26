@@ -721,20 +721,20 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       });
     });
 
-    root.querySelector<HTMLButtonElement>('[data-action="open-settings"]')?.addEventListener('click', () => {
+    root.querySelectorAll<HTMLButtonElement>('[data-action="open-settings"]').forEach((button) => button.addEventListener('click', () => {
       state = openSettingsPage(state);
       rerender();
-    });
+    }));
 
-    root.querySelector<HTMLButtonElement>('[data-action="open-task-planning"]')?.addEventListener('click', () => {
+    root.querySelectorAll<HTMLButtonElement>('[data-action="open-task-planning"]').forEach((button) => button.addEventListener('click', () => {
       state = openTaskPlanningPage(state);
       rerender();
-    });
+    }));
 
-    root.querySelector<HTMLButtonElement>('[data-action="open-event-details"]')?.addEventListener('click', () => {
+    root.querySelectorAll<HTMLButtonElement>('[data-action="open-event-details"]').forEach((button) => button.addEventListener('click', () => {
       state = openEventDetailsPage(state);
       rerender();
-    });
+    }));
 
     root.querySelectorAll<HTMLButtonElement>('[data-action="back-to-game"]').forEach((button) => {
       button.addEventListener('click', () => {
