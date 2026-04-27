@@ -16,6 +16,11 @@ import { buildPlayerFacingSceneSummary, summarizeResolvedEvent, compressMemory }
 import { getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
 import { appendStreamWithRateLimit } from '../logic/streamDisplay';
 import { clampStreamCharsPerSecond, loadStoredSettings, saveStoredSettings } from '../settings/storage';
+import { applyGameEffects } from '../player/effects';
+import { formatGameEffectsInline } from '../player/effectSummary';
+import { serializePlayerStateForPrompt } from '../player/serializeForPrompt';
+import { loadStoredPlayerState, saveStoredPlayerState } from '../player/storage';
+import type { GameEffect } from '../player/types';
 import {
   appendActiveEventFacts,
   advanceClockByMinutes,
@@ -43,9 +48,11 @@ import {
   finishTaskImageGeneration,
   finishTaskStreamingReply,
   openEventDetailsPage,
+  openCharacterPage,
   openImagePromptPage,
   openTaskPlanningPage,
   openSettingsPage,
+  recordSettlementEffects,
   recordWorldAdvance,
   selectSceneEventSeed,
   setTaskControlMode,
@@ -53,6 +60,7 @@ import {
   setSceneSummary,
   setSceneGenerationError,
   setCurrentModel,
+  setPlayerState,
   startTask,
   startTaskImageGeneration,
   startTaskRequest,
@@ -116,12 +124,23 @@ const applyStoredSettings = (state: GameState): GameState => {
   };
 };
 
+const applyStoredPlayerState = (state: GameState): GameState => ({
+  ...state,
+  player: loadStoredPlayerState()
+});
+
 const persistSettings = (state: GameState): void => {
   saveStoredSettings({
     currentModel: state.settings.currentModel,
     streamCharsPerSecond: state.settings.streamCharsPerSecond
   });
 };
+
+const persistPlayerState = (state: GameState): void => {
+  saveStoredPlayerState(state.player);
+};
+
+const getPlayerStatePrompt = (state: GameState): string => serializePlayerStateForPrompt(state.player);
 
 const CONTINUE_STORY_PROMPT = '玩家暂时没有回应，只是在等待、观察和感受当前气氛。请根据当前场景自然推进一小段剧情，然后停在等待玩家选择或回应的位置。';
 const STREAM_REVEAL_BOOST_CHARS = 10;
@@ -152,11 +171,22 @@ const formatTaskTimeLabel = (minutes: number): string => {
 };
 
 export const bindUi = (root: HTMLDivElement, initialState = createInitialState()): void => {
-  let state: GameState = applyStoredSettings(initialState);
+  let state: GameState = applyStoredPlayerState(applyStoredSettings(initialState));
   let shouldAutoScrollHistory = true;
   let preservedHistoryScrollTop = 0;
   let streamRevealBoostCharacters = 0;
   let taskStreamRevealBoostCharacters = 0;
+
+  const applySettlementEffectsToState = (summary: string, effects: GameEffect[] = []): void => {
+    if (!effects.length) {
+      state = recordSettlementEffects(state, summary, []);
+      return;
+    }
+
+    state = setPlayerState(state, applyGameEffects(state.player, effects));
+    state = recordSettlementEffects(state, summary, effects);
+    persistPlayerState(state);
+  };
 
   const updateHistoryScrollPreference = (history: HTMLElement): void => {
     const maxScrollTop = Math.max(history.scrollHeight - history.clientHeight, 0);
@@ -267,7 +297,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         timeSlot: state.clock.timeSlot,
         memorySummary: state.memory.summary,
         memoryFacts: state.memory.facts,
-        worldRevision: state.world.revision
+        worldRevision: state.world.revision,
+        playerStatePrompt: getPlayerStatePrompt(state)
       });
 
       state = cacheSceneEvent(state, plannedEvent);
@@ -324,7 +355,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
           suspenseThreads: activeEvent.suspenseThreads,
           transcript: state.event.transcript.map((message) => `${message.label}：${message.content}`),
           playerInput: intent === 'end_event' ? '请基于当前气氛，自然地把这一幕收尾。' : playerInput,
-          intent
+          intent,
+          playerStatePrompt: getPlayerStatePrompt(state)
         }),
         getCharsPerSecond: () => state.settings.streamCharsPerSecond,
         shouldSkipRateLimit: () => {
@@ -373,25 +405,31 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
           locationLabel: resolvedEvent.locationLabel,
           eventTitle: resolvedTitle,
           transcript: transcriptForMemory,
-          eventFacts: resolvedEvent.facts
+          eventFacts: resolvedEvent.facts,
+          playerStatePrompt: getPlayerStatePrompt(state)
         });
         const memoryResult = summarizeResolvedEvent({
           event: resolvedEvent,
           transcript: transcriptForMemory,
           memoryFacts: state.memory.facts
         });
+        const eventEffectSummary = formatGameEffectsInline(timeSettlement.effects ?? []);
+        const eventSettlementSummary = eventEffectSummary
+          ? `${timeSettlement.summary} 结算变化：${eventEffectSummary}。`
+          : timeSettlement.summary;
         const playerSceneSummary = buildPlayerFacingSceneSummary({
           event: resolvedEvent,
           transcript: transcriptForMemory,
-          settlementSummary: timeSettlement.summary
+          settlementSummary: eventSettlementSummary
         });
 
         state = advanceClockByMinutes(state, timeSettlement.minutesElapsed);
         state = updateMemory(state, memoryResult);
         state = setSceneSummary(state, resolvedSceneId, playerSceneSummary);
+        applySettlementEffectsToState(timeSettlement.summary, timeSettlement.effects);
         state = recordWorldAdvance(
           state,
-          `事件【${resolvedTitle}】已经自然收束，时间推进了 ${timeSettlement.minutesElapsed} 分钟。${timeSettlement.summary}`
+          `事件【${resolvedTitle}】已经自然收束，时间推进了 ${timeSettlement.minutesElapsed} 分钟。${eventSettlementSummary}`
         );
         state = endEvent(state);
       }
@@ -473,7 +511,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         task: latestTask,
         locationLabel,
         memorySummary: state.memory.summary,
-        memoryFacts: state.memory.facts
+        memoryFacts: state.memory.facts,
+        playerStatePrompt: getPlayerStatePrompt(state)
       });
       const imageUrl = await requestGeneratedTaskImage({
         task: latestTask,
@@ -512,14 +551,16 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     try {
       const settlement =
         task.executionMode === 'result' && task.summary
-          ? { summary: task.summary, facts: task.facts }
+          ? { summary: task.summary, facts: task.facts, effects: [] }
           : await requestTaskFinalSummary({
               model: state.settings.currentModel,
               task,
               memorySummary: state.memory.summary,
               memoryFacts: state.memory.facts,
-              locationLabel: resolveLocationLabel(state)
+              locationLabel: resolveLocationLabel(state),
+              playerStatePrompt: getPlayerStatePrompt(state)
             });
+      applySettlementEffectsToState(settlement.summary, settlement.effects);
       state = completeTask(state, settlement.summary, settlement.facts);
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
@@ -557,7 +598,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         toLabel,
         memorySummary: state.memory.summary,
         memoryFacts: state.memory.facts,
-        locationLabel: resolveLocationLabel(state)
+        locationLabel: resolveLocationLabel(state),
+        playerStatePrompt: getPlayerStatePrompt(state)
       });
 
       await streamTaskText(segment.content, '世界');
@@ -576,8 +618,10 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
             task: nextTask,
             memorySummary: state.memory.summary,
             memoryFacts: state.memory.facts,
-            locationLabel: resolveLocationLabel(state)
+            locationLabel: resolveLocationLabel(state),
+            playerStatePrompt: getPlayerStatePrompt(state)
           });
+          applySettlementEffectsToState(settlement.summary, settlement.effects);
           state = completeTask(state, settlement.summary, settlement.facts);
         }
       }
@@ -629,18 +673,6 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       segmentMinutes
     });
 
-    if (executionMode === 'result') {
-      state = {
-        ...state,
-        ui: {
-          ...state.ui,
-          currentPage: 'task-planning',
-          mode: 'task',
-          isSending: true
-        }
-      };
-    }
-
     rerender();
 
     const task = state.task.activeTask;
@@ -658,10 +690,12 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
             timeLabel: state.clock.label,
             memorySummary: state.memory.summary,
             memoryFacts: state.memory.facts,
-            locationLabel: resolveLocationLabel(state)
+            locationLabel: resolveLocationLabel(state),
+            playerStatePrompt: getPlayerStatePrompt(state)
           }),
-          generateCurrentTaskImage({ rerenderDuringGeneration: false })
+          generateCurrentTaskImage()
         ]);
+        applySettlementEffectsToState(settlement.summary, settlement.effects);
         state = completeTask(state, settlement.summary, settlement.facts);
       } else {
         await generateCurrentTaskImage();
@@ -702,7 +736,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
           playerInput,
           memorySummary: state.memory.summary,
           memoryFacts: state.memory.facts,
-          locationLabel: resolveLocationLabel(state)
+          locationLabel: resolveLocationLabel(state),
+          playerStatePrompt: getPlayerStatePrompt(state)
         }),
         getCharsPerSecond: () => state.settings.streamCharsPerSecond,
         shouldSkipRateLimit: () => {
@@ -838,6 +873,11 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     root.querySelectorAll<HTMLButtonElement>('[data-action="open-task-planning"]').forEach((button) => button.addEventListener('click', () => {
       state = openTaskPlanningPage(state);
+      rerender();
+    }));
+
+    root.querySelectorAll<HTMLButtonElement>('[data-action="open-character"]').forEach((button) => button.addEventListener('click', () => {
+      state = openCharacterPage(state);
       rerender();
     }));
 

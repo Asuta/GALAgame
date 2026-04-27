@@ -1,4 +1,6 @@
 import { worldData } from '../data/world';
+import { createInitialPlayerState } from '../player/initialState';
+import type { GameEffect, PlayerState } from '../player/types';
 import type {
   EventPhase,
   GeneratedEvent,
@@ -24,7 +26,15 @@ export interface GameState {
     currentSceneId: string | null;
   };
   ui: {
-    currentPage: 'game' | 'settings' | 'event-details' | 'image-prompt' | 'task-planning' | 'task-running' | 'decision';
+    currentPage:
+      | 'game'
+      | 'settings'
+      | 'event-details'
+      | 'image-prompt'
+      | 'task-planning'
+      | 'task-running'
+      | 'decision'
+      | 'character';
     mode: Mode;
     isModelMenuOpen: boolean;
     isStreamSpeedMenuOpen: boolean;
@@ -75,6 +85,11 @@ export interface GameState {
     availableModels: string[];
     currentModel: string;
     streamCharsPerSecond: number;
+  };
+  player: PlayerState;
+  settlement: {
+    lastEffects: GameEffect[];
+    lastSummary: string;
   };
 }
 
@@ -227,6 +242,11 @@ export const createInitialState = (): GameState => ({
     availableModels: ['deepseek-reasoner', 'deepseek-chat', 'gpt-4o-mini', 'gpt-4.1-mini', 'claude-3.5-sonnet'],
     currentModel: 'deepseek-chat',
     streamCharsPerSecond: 17
+  },
+  player: createInitialPlayerState(),
+  settlement: {
+    lastEffects: [],
+    lastSummary: ''
   }
 });
 
@@ -999,6 +1019,16 @@ export const openImagePromptPage = (state: GameState): GameState => ({
   }
 });
 
+export const openCharacterPage = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    currentPage: 'character',
+    isModelMenuOpen: false,
+    isStreamSpeedMenuOpen: false
+  }
+});
+
 export const closeSettingsPage = (state: GameState): GameState => ({
   ...state,
   ui: {
@@ -1006,6 +1036,19 @@ export const closeSettingsPage = (state: GameState): GameState => ({
     currentPage: 'game',
     isModelMenuOpen: false,
     isStreamSpeedMenuOpen: false
+  }
+});
+
+export const setPlayerState = (state: GameState, player: PlayerState): GameState => ({
+  ...state,
+  player
+});
+
+export const recordSettlementEffects = (state: GameState, summary: string, effects: GameEffect[]): GameState => ({
+  ...state,
+  settlement: {
+    lastSummary: summary,
+    lastEffects: effects
   }
 });
 

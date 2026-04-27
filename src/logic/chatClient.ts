@@ -1,4 +1,5 @@
 import type { EventPhase, GeneratedEvent, Scene, TaskRuntime, TaskSegment, TimeSlot } from '../data/types';
+import type { GameEffect, PlayerAcademics, PlayerAttributes } from '../player/types';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -36,6 +37,7 @@ export interface BuildChatRequestInput {
   overlimitTrigger?: string;
   suspenseThreads?: string[];
   intent?: 'continue' | 'end_event';
+  playerStatePrompt?: string;
 }
 
 export interface BuildEventPlanRequestInput {
@@ -47,6 +49,7 @@ export interface BuildEventPlanRequestInput {
   timeSlot: TimeSlot;
   memorySummary: string;
   memoryFacts: string[];
+  playerStatePrompt?: string;
 }
 
 export interface ParsePlannedSceneEventInput {
@@ -77,6 +80,7 @@ export interface ChatRuntimeConfig {
 export interface EventTimeSettlement {
   minutesElapsed: number;
   summary: string;
+  effects: GameEffect[];
 }
 
 export interface BuildEventTimeSettlementRequestInput {
@@ -87,6 +91,7 @@ export interface BuildEventTimeSettlementRequestInput {
   eventTitle: string;
   transcript: string[];
   eventFacts: string[];
+  playerStatePrompt?: string;
 }
 
 export interface BuildEventImagePromptRequestInput {
@@ -112,6 +117,7 @@ export interface BuildFallbackTimeSettlementInput {
 export interface TaskSettlement {
   summary: string;
   facts: string[];
+  effects: GameEffect[];
 }
 
 export interface BuildTaskResultRequestInput {
@@ -122,6 +128,7 @@ export interface BuildTaskResultRequestInput {
   memorySummary: string;
   memoryFacts: string[];
   locationLabel: string;
+  playerStatePrompt?: string;
 }
 
 export interface BuildTaskSegmentRequestInput {
@@ -133,6 +140,7 @@ export interface BuildTaskSegmentRequestInput {
   memorySummary: string;
   memoryFacts: string[];
   locationLabel: string;
+  playerStatePrompt?: string;
 }
 
 export interface BuildTaskManualRequestInput {
@@ -143,6 +151,7 @@ export interface BuildTaskManualRequestInput {
   memorySummary: string;
   memoryFacts: string[];
   locationLabel: string;
+  playerStatePrompt?: string;
 }
 
 export interface BuildTaskFinalSummaryRequestInput {
@@ -152,6 +161,7 @@ export interface BuildTaskFinalSummaryRequestInput {
   memorySummary: string;
   memoryFacts: string[];
   locationLabel: string;
+  playerStatePrompt?: string;
 }
 
 export interface BuildTaskImagePromptRequestInput {
@@ -161,6 +171,7 @@ export interface BuildTaskImagePromptRequestInput {
   locationLabel: string;
   memorySummary: string;
   memoryFacts: string[];
+  playerStatePrompt?: string;
 }
 
 const sanitizeFact = (value: string): string => value.replace(/\s+/g, ' ').trim();
@@ -181,6 +192,280 @@ const clampMinutes = (minutes: number): number => Math.max(10, Math.min(180, Mat
 const isTaskAttentionLevel = (value: string): value is TaskSegment['attentionLevel'] =>
   value === 'low' || value === 'medium' || value === 'high';
 
+const withPlayerStatePrompt = (playerStatePrompt?: string): string[] =>
+  playerStatePrompt?.trim()
+    ? [
+        '',
+        playerStatePrompt.trim(),
+        '注意：如果历史上下文、长期记忆或旧结算内容与当前权威角色数据冲突，请以当前权威角色数据为准。'
+      ]
+    : [];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const PLAYER_ATTRIBUTE_KEYS: Array<keyof PlayerAttributes> = ['intelligence', 'stamina', 'agility', 'insight', 'hp'];
+const PLAYER_ACADEMIC_KEYS: Array<keyof PlayerAcademics> = ['math', 'literature', 'english', 'physics'];
+const EFFECT_TYPE_ALIASES: Record<string, GameEffect['type']> = {
+  attribute_delta: 'attribute_delta',
+  attributeDelta: 'attribute_delta',
+  属性变化: 'attribute_delta',
+  属性增减: 'attribute_delta',
+  academic_delta: 'academic_delta',
+  academicDelta: 'academic_delta',
+  学科变化: 'academic_delta',
+  学科增减: 'academic_delta',
+  money_delta: 'money_delta',
+  moneyDelta: 'money_delta',
+  金钱变化: 'money_delta',
+  资产变化: 'money_delta',
+  item_add: 'item_add',
+  itemAdd: 'item_add',
+  add_item: 'item_add',
+  获得物品: 'item_add',
+  添加物品: 'item_add',
+  item_remove: 'item_remove',
+  itemRemove: 'item_remove',
+  remove_item: 'item_remove',
+  移除物品: 'item_remove',
+  item_update: 'item_update',
+  itemUpdate: 'item_update',
+  update_item: 'item_update',
+  更新物品: 'item_update'
+};
+const ATTRIBUTE_KEY_ALIASES: Record<string, keyof PlayerAttributes> = {
+  intelligence: 'intelligence',
+  智力: 'intelligence',
+  stamina: 'stamina',
+  体力: 'stamina',
+  agility: 'agility',
+  敏捷: 'agility',
+  insight: 'insight',
+  悟性: 'insight',
+  hp: 'hp',
+  HP: 'hp',
+  生命: 'hp',
+  健康: 'hp'
+};
+const ACADEMIC_KEY_ALIASES: Record<string, keyof PlayerAcademics> = {
+  math: 'math',
+  数学: 'math',
+  literature: 'literature',
+  语文: 'literature',
+  english: 'english',
+  英语: 'english',
+  physics: 'physics',
+  物理: 'physics'
+};
+
+const isPlayerAttributeKey = (value: string): value is keyof PlayerAttributes =>
+  PLAYER_ATTRIBUTE_KEYS.includes(value as keyof PlayerAttributes);
+
+const isPlayerAcademicKey = (value: string): value is keyof PlayerAcademics =>
+  PLAYER_ACADEMIC_KEYS.includes(value as keyof PlayerAcademics);
+
+const normalizeEffectType = (value: unknown): GameEffect['type'] | null =>
+  typeof value === 'string' ? (EFFECT_TYPE_ALIASES[value.trim()] ?? null) : null;
+
+const normalizeAttributeKey = (value: unknown): keyof PlayerAttributes | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = ATTRIBUTE_KEY_ALIASES[value.trim()];
+
+  return normalized && isPlayerAttributeKey(normalized) ? normalized : null;
+};
+
+const normalizeAcademicKey = (value: unknown): keyof PlayerAcademics | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = ACADEMIC_KEY_ALIASES[value.trim()];
+
+  return normalized && isPlayerAcademicKey(normalized) ? normalized : null;
+};
+
+const readNumericDelta = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const normalizeItemEffects = (value: unknown): Array<{ type: string; value?: string | number | boolean; scope?: string }> => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isRecord)
+    .map((itemEffect) => ({
+      type: typeof itemEffect.type === 'string' ? itemEffect.type : 'unknown',
+      value:
+        typeof itemEffect.value === 'string' || typeof itemEffect.value === 'number' || typeof itemEffect.value === 'boolean'
+          ? itemEffect.value
+          : undefined,
+      scope: typeof itemEffect.scope === 'string' ? itemEffect.scope : undefined
+    }))
+    .filter((effect) => effect.type.trim());
+};
+
+const cleanInferredItemName = (value: string): string =>
+  value
+    .replace(/[，。,.；;！!？?].*$/g, '')
+    .replace(/^(一把|一个|一件|一瓶|一副|一些|新的|合适的|适合且价格合理的)/, '')
+    .trim();
+
+const inferPurchaseEffectsFromText = (text: string): GameEffect[] => {
+  const purchaseMatch =
+    /(?:买到|买了|购买了|购买到|获得了|拿到了|带着新|带着|找到了|找到)(?:一把|一个|一件|一瓶|一副|合适的|适合且价格合理的)?([^，。,.；;！!？?\n]{1,18}?)(?:并|离开|$|[，。,.；;！!？?\n])/.exec(
+      text
+    );
+
+  if (!purchaseMatch) {
+    return [];
+  }
+
+  const itemName = cleanInferredItemName(purchaseMatch[1] ?? '');
+
+  if (!itemName) {
+    return [];
+  }
+
+  const effects: GameEffect[] = [
+    {
+      type: 'item_add',
+      item: {
+        name: itemName,
+        description: `任务结算中获得的物品：${itemName}。`,
+        abilityText: `普通物品：${itemName}。可以在后续剧情中作为玩家拥有的物品被引用。`,
+        effects: [{ type: 'owned_item', scope: 'inventory' }]
+      },
+      quantity: 1,
+      reason: '模型结算文本提到玩家获得了该物品，但没有返回结构化 effects，系统自动补全。'
+    }
+  ];
+  const priceMatch = /(?:花了|花费|支付|价格|售价|付了)\s*(\d+)\s*(?:元|块|人民币)/.exec(text);
+
+  if (priceMatch) {
+    effects.push({
+      type: 'money_delta',
+      delta: -Number(priceMatch[1]),
+      reason: '模型结算文本提到购买价格，系统自动补全金钱变化。'
+    });
+  }
+
+  return effects;
+};
+
+const inferSettlementEffects = (summary: string, facts: string[]): GameEffect[] =>
+  inferPurchaseEffectsFromText([summary, ...facts].join('\n'));
+
+const parseGameEffects = (value: unknown): GameEffect[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(isRecord).flatMap((effect): GameEffect[] => {
+    const effectType = normalizeEffectType(effect.type);
+
+    if (
+      effectType === 'attribute_delta' &&
+      normalizeAttributeKey(effect.target) &&
+      readNumericDelta(effect.delta) !== null
+    ) {
+      return [
+        {
+          type: 'attribute_delta',
+          target: normalizeAttributeKey(effect.target)!,
+          delta: readNumericDelta(effect.delta)!,
+          reason: typeof effect.reason === 'string' ? effect.reason : undefined
+        }
+      ];
+    }
+
+    if (
+      effectType === 'academic_delta' &&
+      normalizeAcademicKey(effect.subject) &&
+      readNumericDelta(effect.delta) !== null
+    ) {
+      return [
+        {
+          type: 'academic_delta',
+          subject: normalizeAcademicKey(effect.subject)!,
+          delta: readNumericDelta(effect.delta)!,
+          reason: typeof effect.reason === 'string' ? effect.reason : undefined
+        }
+      ];
+    }
+
+    if (effectType === 'money_delta' && readNumericDelta(effect.delta) !== null) {
+      return [
+        {
+          type: 'money_delta',
+          delta: readNumericDelta(effect.delta)!,
+          reason: typeof effect.reason === 'string' ? effect.reason : undefined
+        }
+      ];
+    }
+
+    if (effectType === 'item_add' && isRecord(effect.item)) {
+      const item = effect.item;
+
+      return [
+        {
+          type: 'item_add',
+          item: {
+            id: typeof item.id === 'string' ? item.id : undefined,
+            name: typeof item.name === 'string' ? item.name : '未命名物品',
+            description: typeof item.description === 'string' ? item.description : '暂无描述。',
+            abilityText:
+              typeof item.abilityText === 'string'
+                ? item.abilityText
+                : typeof item.ability === 'string'
+                  ? item.ability
+                  : '暂无特殊能力说明。',
+            effects: normalizeItemEffects(item.effects),
+            quantity: typeof item.quantity === 'number' ? item.quantity : undefined
+          },
+          quantity: typeof effect.quantity === 'number' ? effect.quantity : undefined,
+          reason: typeof effect.reason === 'string' ? effect.reason : undefined
+        }
+      ];
+    }
+
+    if (effectType === 'item_remove') {
+      return [
+        {
+          type: 'item_remove',
+          itemId: typeof effect.itemId === 'string' ? effect.itemId : undefined,
+          name: typeof effect.name === 'string' ? effect.name : undefined,
+          quantity: typeof effect.quantity === 'number' ? effect.quantity : undefined,
+          reason: typeof effect.reason === 'string' ? effect.reason : undefined
+        }
+      ];
+    }
+
+    if (effectType === 'item_update' && isRecord(effect.patch)) {
+      return [
+        {
+          type: 'item_update',
+          itemId: typeof effect.itemId === 'string' ? effect.itemId : undefined,
+          name: typeof effect.name === 'string' ? effect.name : undefined,
+          patch: {
+            name: typeof effect.patch.name === 'string' ? effect.patch.name : undefined,
+            description: typeof effect.patch.description === 'string' ? effect.patch.description : undefined,
+            abilityText: typeof effect.patch.abilityText === 'string' ? effect.patch.abilityText : undefined,
+            quantity: typeof effect.patch.quantity === 'number' ? effect.patch.quantity : undefined,
+            effects: Array.isArray(effect.patch.effects) ? normalizeItemEffects(effect.patch.effects) : undefined
+          },
+          reason: typeof effect.reason === 'string' ? effect.reason : undefined
+        }
+      ];
+    }
+
+    return [];
+  });
+};
+
 export const buildChatRequest = ({
   model,
   systemPrompt,
@@ -196,7 +481,8 @@ export const buildChatRequest = ({
   phaseGoal,
   overlimitTrigger,
   suspenseThreads = [],
-  intent = 'continue'
+  intent = 'continue',
+  playerStatePrompt
 }: BuildChatRequestInput): ChatRequestPayload => ({
   model,
   messages: [
@@ -226,6 +512,7 @@ export const buildChatRequest = ({
         `角色设定：\n${characterProfile}`,
         `局势摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
         `最近对话：${transcript.length ? transcript.join('\n') : '暂无'}`,
         `玩家本轮输入：${playerInput}`,
         intent === 'end_event'
@@ -245,7 +532,8 @@ export const buildEventPlanRequest = ({
   timeLabel,
   timeSlot,
   memorySummary,
-  memoryFacts
+  memoryFacts,
+  playerStatePrompt
 }: BuildEventPlanRequestInput): ChatRequestPayload => ({
   model,
   messages: [
@@ -276,6 +564,7 @@ export const buildEventPlanRequest = ({
         `悬念种子：${scene.eventSeed.suspenseSeeds.join('；')}`,
         `当前记忆摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
         '请基于以上上下文生成一个当前场景可用的事件骨架。超限触发必须明确，且不要把结局写死成成功或失败。'
       ].join('\n')
     }
@@ -289,7 +578,8 @@ export const buildEventTimeSettlementRequest = ({
   locationLabel,
   eventTitle,
   transcript,
-  eventFacts
+  eventFacts,
+  playerStatePrompt
 }: BuildEventTimeSettlementRequestInput): ChatRequestPayload => ({
   model,
   messages: [
@@ -299,8 +589,13 @@ export const buildEventTimeSettlementRequest = ({
         systemPrompt,
         '你负责为已结束的事件做时间结算。',
         '请输出 JSON 对象，不要添加代码块。',
-        '必须包含字段：minutesElapsed, summary。',
-        'minutesElapsed 代表这次事件在世界里实际消耗的分钟数。'
+        '必须包含字段：minutesElapsed, summary, effects。',
+        'minutesElapsed 代表这次事件在世界里实际消耗的分钟数。',
+        'effects 是这次经历对玩家数值和背包的影响数组；没有影响时返回空数组。',
+        'effects 支持：attribute_delta, academic_delta, money_delta, item_add, item_remove, item_update。',
+        '属性 target 只能是 intelligence, stamina, agility, insight, hp；学科 subject 只能是 math, literature, english, physics。',
+        '如果事件中购买了物品，effects 必须同时包含 item_add；如果能判断花费，必须包含 money_delta。',
+        '如果事件中受伤、疲惫、学习、训练、赚钱、花钱或获得物品，不要只写进 summary/facts，必须写进 effects。'
       ].join('\n')
     },
     {
@@ -311,8 +606,10 @@ export const buildEventTimeSettlementRequest = ({
         `事件标题：${eventTitle}`,
         `对话记录：${transcript.length ? transcript.join('\n') : '暂无'}`,
         `事件事实：${eventFacts.length ? eventFacts.join('；') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
         '请根据事件规模、对话长度、冲突和推进强度，判断这次事件大概耗时多少分钟。',
-        '如果只是短暂交流，耗时分钟可以在 10-30；如果剧情很多、经历明显冲突，耗时分钟可以更长。'
+        '如果只是短暂交流，耗时分钟可以在 10-30；如果剧情很多、经历明显冲突，耗时分钟可以更长。',
+        '输出示例：{"minutesElapsed":20,"summary":"你买到了一把剪刀。","effects":[{"type":"item_add","item":{"name":"剪刀","description":"一把普通剪刀。","abilityText":"可以剪开纸张、线头或简单包装。","effects":[{"type":"cut_simple_material","scope":"ordinary"}]},"quantity":1},{"type":"money_delta","delta":-12,"reason":"购买剪刀"}]}'
       ].join('\n')
     }
   ]
@@ -425,7 +722,8 @@ export const buildTaskResultRequest = ({
   timeLabel,
   memorySummary,
   memoryFacts,
-  locationLabel
+  locationLabel,
+  playerStatePrompt
 }: BuildTaskResultRequestInput): ChatRequestPayload => ({
   model,
   messages: [
@@ -435,8 +733,13 @@ export const buildTaskResultRequest = ({
         systemPrompt,
         '你负责结算玩家安排的一段时间任务。',
         '请输出 JSON 对象，不要添加代码块。',
-        '必须包含字段：summary, facts。',
-        'summary 是给玩家看的几段结果总结；facts 是可以写入世界记忆的短句数组。'
+        '必须包含字段：summary, facts, effects。',
+        'summary 是给玩家看的几段结果总结；facts 是可以写入世界记忆的短句数组。',
+        'effects 是这次任务对玩家数值和背包的影响数组；没有影响时返回空数组。',
+        'effects 支持：attribute_delta, academic_delta, money_delta, item_add, item_remove, item_update。',
+        '属性 target 只能是 intelligence, stamina, agility, insight, hp；学科 subject 只能是 math, literature, english, physics。',
+        '如果任务目标是购买、获得或带回某个实体物品，effects 必须包含 item_add；如果能判断花费，必须包含 money_delta。',
+        '如果任务导致受伤、疲惫、学习、训练、赚钱、花钱或获得物品，不要只写进 summary/facts，必须写进 effects。'
       ].join('\n')
     },
     {
@@ -448,8 +751,10 @@ export const buildTaskResultRequest = ({
         `任务时间：${task.startMinutes} 分钟刻度到 ${task.endMinutes} 分钟刻度`,
         `世界记忆摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
         '请忽略细节过程，直接推演这段时间结束后发生了什么、任务完成得如何、世界状态有什么轻微变化。',
-        '可以出现插曲，但插曲必须留在任务内部，不要把它升级为独立事件。'
+        '可以出现插曲，但插曲必须留在任务内部，不要把它升级为独立事件。',
+        '输出示例：{"summary":"你去超市买到了一把剪刀。","facts":["你购买了剪刀"],"effects":[{"type":"item_add","item":{"name":"剪刀","description":"一把普通剪刀。","abilityText":"可以剪开纸张、线头或简单包装。","effects":[{"type":"cut_simple_material","scope":"ordinary"}]},"quantity":1},{"type":"money_delta","delta":-12,"reason":"购买剪刀"}]}'
       ].join('\n')
     }
   ]
@@ -463,7 +768,8 @@ export const buildTaskSegmentRequest = ({
   toLabel,
   memorySummary,
   memoryFacts,
-  locationLabel
+  locationLabel,
+  playerStatePrompt
 }: BuildTaskSegmentRequestInput): ChatRequestPayload => ({
   model,
   messages: [
@@ -489,6 +795,7 @@ export const buildTaskSegmentRequest = ({
         `手动托管记录：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
         `世界记忆摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
         '请生成这一小段时间内发生的事情。内容要具体，但不要替玩家做重大选择。'
       ].join('\n')
     }
@@ -502,7 +809,8 @@ export const buildTaskManualRequest = ({
   playerInput,
   memorySummary,
   memoryFacts,
-  locationLabel
+  locationLabel,
+  playerStatePrompt
 }: BuildTaskManualRequestInput): ChatRequestPayload => ({
   model,
   messages: [
@@ -527,6 +835,7 @@ export const buildTaskManualRequest = ({
         `最近托管对话：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
         `世界记忆摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
         `玩家本轮输入：${playerInput}`,
         '请在任务内部自然回应，并停在等待玩家继续或交还自动托管的位置。'
       ].join('\n')
@@ -541,7 +850,8 @@ export const buildTaskFinalSummaryRequest = ({
   task,
   memorySummary,
   memoryFacts,
-  locationLabel
+  locationLabel,
+  playerStatePrompt
 }: BuildTaskFinalSummaryRequestInput): ChatRequestPayload => ({
   model,
   messages: [
@@ -551,7 +861,11 @@ export const buildTaskFinalSummaryRequest = ({
         systemPrompt,
         '你负责把一个过程导向任务整理成最终结算。',
         '请输出 JSON 对象，不要添加代码块。',
-        '必须包含字段：summary, facts。'
+        '必须包含字段：summary, facts, effects。',
+        'effects 是这次任务对玩家数值和背包的影响数组；没有影响时返回空数组。',
+        'effects 支持：attribute_delta, academic_delta, money_delta, item_add, item_remove, item_update。',
+        '如果任务中购买、获得或带回某个实体物品，effects 必须包含 item_add；如果能判断花费，必须包含 money_delta。',
+        '如果任务导致受伤、疲惫、学习、训练、赚钱、花钱或获得物品，不要只写进 summary/facts，必须写进 effects。'
       ].join('\n')
     },
     {
@@ -564,6 +878,7 @@ export const buildTaskFinalSummaryRequest = ({
         `手动托管记录：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
         `世界记忆摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
         '请总结这段任务的完成情况、重要插曲和可以留下的记忆事实。'
       ].join('\n')
     }
@@ -630,7 +945,8 @@ export const buildFallbackTimeSettlement = ({
 
   return {
     minutesElapsed,
-    summary: `这次事件包含 ${transcript.length} 段互动与 ${eventFacts.length} 条事件事实，时间自然推进到了 ${minutesElapsed} 分钟之后。`
+    summary: `这次事件包含 ${transcript.length} 段互动与 ${eventFacts.length} 条事件事实，时间自然推进到了 ${minutesElapsed} 分钟之后。`,
+    effects: []
   };
 };
 
@@ -691,10 +1007,13 @@ export const parseEventTimeSettlement = (responseText: string): EventTimeSettlem
   }
 
   const parsed = JSON.parse(jsonText) as Partial<EventTimeSettlement>;
+  const summary = parsed.summary?.trim() || '这次事件自然过去了一小段时间。';
+  const effects = parseGameEffects((parsed as { effects?: unknown }).effects);
 
   return {
     minutesElapsed: clampMinutes(parsed.minutesElapsed ?? 20),
-    summary: parsed.summary?.trim() || '这次事件自然过去了一小段时间。'
+    summary,
+    effects: effects.length ? effects : inferSettlementEffects(summary, [])
   };
 };
 
@@ -704,15 +1023,20 @@ export const parseTaskSettlement = (responseText: string): TaskSettlement => {
   if (!jsonText) {
     return {
       summary: responseText.trim() || '任务已经完成。',
-      facts: []
+      facts: [],
+      effects: []
     };
   }
 
   const parsed = JSON.parse(jsonText) as Partial<TaskSettlement>;
+  const summary = parsed.summary?.trim() || '任务已经完成。';
+  const facts = Array.isArray(parsed.facts) ? parsed.facts.map((fact) => fact.trim()).filter(Boolean) : [];
+  const effects = parseGameEffects((parsed as { effects?: unknown }).effects);
 
   return {
-    summary: parsed.summary?.trim() || '任务已经完成。',
-    facts: Array.isArray(parsed.facts) ? parsed.facts.map((fact) => fact.trim()).filter(Boolean) : []
+    summary,
+    facts,
+    effects: effects.length ? effects : inferSettlementEffects(summary, facts)
   };
 };
 

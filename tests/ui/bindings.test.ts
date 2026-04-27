@@ -469,6 +469,45 @@ describe('bindUi scene switching', () => {
     expect(document.body.textContent).toContain('旁白：她轻轻抬眼。林晚：');
   });
 
+  it('includes settlement changes in the event closing summary', async () => {
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+    requestStoryReplyStreamMock.mockImplementation(async function* () {
+      yield '旁白：你们把话说到这里，气氛终于松了一点。[EVENT_END]';
+    });
+    requestEventTimeSettlementMock.mockResolvedValueOnce({
+      minutesElapsed: 15,
+      summary: '这段事件让你稍微冷静下来。',
+      effects: [
+        { type: 'attribute_delta', target: 'insight', delta: 1 },
+        { type: 'money_delta', delta: 300 }
+      ]
+    });
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '那今天就先这样吧。';
+    (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
+    await flushUi();
+    await waitForText('结算变化：悟性 +1；资产 +300。');
+
+    expect(document.body.textContent).toContain('这段事件让你稍微冷静下来');
+    expect(document.body.textContent).toContain('结算变化：悟性 +1；资产 +300。');
+  });
+
   it('generates an event image from the waiting event and uses it as the visual background', async () => {
     const imageDeferred = createDeferred<string>();
     requestGeneratedEventImageMock.mockReturnValueOnce(imageDeferred.promise);
@@ -675,8 +714,8 @@ describe('bindUi scene switching', () => {
     expect(document.body.textContent).toContain('选择一个区域');
   });
 
-  it('runs a result-oriented task directly to the decision page with its image', async () => {
-    const resultDeferred = createDeferred<{ summary: string; facts: string[] }>();
+  it('shows a transition screen while a result-oriented task resolves', async () => {
+    const resultDeferred = createDeferred<{ summary: string; facts: string[]; effects: [] }>();
     requestTaskResultMock.mockReturnValueOnce(resultDeferred.promise);
 
     bindUi(document.querySelector('#app') as HTMLDivElement);
@@ -689,13 +728,17 @@ describe('bindUi scene switching', () => {
     (document.querySelector('[data-action="start-task"]') as HTMLButtonElement).click();
     await flushUi();
 
-    expect(document.querySelector('[data-testid="task-running-page"]')).toBeNull();
-    expect(document.querySelector('[data-testid="task-planning-page"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="task-running-page"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="task-planning-page"]')).toBeNull();
+    expect(document.querySelector('[data-testid="task-result-loading"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('正在推演任务结果');
+    expect(document.body.textContent).toContain('结算属性与背包');
     expect(requestTaskSegmentMock).not.toHaveBeenCalled();
 
     resultDeferred.resolve({
       summary: '整理书包之后，你确认今天要带的东西都准备好了。',
-      facts: ['整理好了书包']
+      facts: ['整理好了书包'],
+      effects: []
     });
     await flushUi();
     await flushUi();

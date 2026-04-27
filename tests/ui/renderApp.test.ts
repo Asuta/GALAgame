@@ -6,8 +6,10 @@ import {
   createInitialState,
   failEventImageGeneration,
   finishEventImageGeneration,
+  openCharacterPage,
   openImagePromptPage,
   openTaskPlanningPage,
+  recordSettlementEffects,
   setSceneSummary,
   startTask,
   appendTaskSegment,
@@ -433,6 +435,40 @@ describe('renderApp', () => {
     expect(document.querySelector('.model-menu')).toBeNull();
   });
 
+  it('renders the player character page with attributes, money, and inventory', () => {
+    let state = openCharacterPage(createInitialState());
+    state = {
+      ...state,
+      player: {
+        ...state.player,
+        money: 500,
+        inventory: {
+          items: [
+            {
+              id: 'item-mind-glasses',
+              name: '揣测心意的眼镜',
+              description: '一副看起来普通的细框眼镜。',
+              abilityText: '佩戴后可以感知对方当前最强烈的情绪倾向。',
+              effects: [{ type: 'read_emotion_hint', scope: 'conversation' }],
+              quantity: 1
+            }
+          ]
+        }
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-testid="character-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('主角状态');
+    expect(document.body.textContent).toContain('当前资产');
+    expect(document.body.textContent).toContain('500');
+    expect(document.body.textContent).toContain('智力');
+    expect(document.body.textContent).toContain('揣测心意的眼镜');
+    expect(document.body.textContent).toContain('read_emotion_hint');
+  });
+
   it('renders task planning, task running, and decision pages', () => {
     let state = openTaskPlanningPage(createInitialState());
 
@@ -484,12 +520,40 @@ describe('renderApp', () => {
     expect(document.querySelector('[data-testid="task-visual-placeholder"]')).toBeNull();
 
     state = completeTask(state, '晨跑结束后，你的状态明显更清醒。', ['完成晨跑']);
+    state = recordSettlementEffects(state, '晨跑结束后，你的状态明显更清醒。', [
+      { type: 'attribute_delta', target: 'stamina', delta: 2 },
+      { type: 'money_delta', delta: -5 }
+    ]);
     renderApp(document.querySelector('#app') as HTMLDivElement, state);
 
     expect(document.querySelector('[data-testid="decision-page"]')).not.toBeNull();
     expect(document.body.textContent).toContain('接下来做什么');
     expect(document.body.textContent).toContain('晨跑结束后');
+    expect(document.querySelector('[data-testid="settlement-effects-card"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('体力 +2');
+    expect(document.body.textContent).toContain('资产 -5');
     expect(document.querySelector('[data-action="open-task-planning"]')).not.toBeNull();
+  });
+
+  it('renders a visible transition panel for resolving result-oriented tasks', () => {
+    let state = createInitialState();
+    state = startTask(state, {
+      content: '在早上整理书包',
+      startMinutes: 360,
+      endMinutes: 420,
+      executionMode: 'result',
+      segmentMinutes: 10
+    });
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.querySelector('[data-testid="task-running-page"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="task-result-loading"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('正在推演任务结果');
+    expect(document.body.textContent).toContain('读取角色数据');
+    expect(document.body.textContent).toContain('结算属性与背包');
+    expect(document.querySelector('[data-action="task-finish"]')).toBeNull();
   });
 
   it('shows an animated scene-generation placeholder while an event is loading', () => {

@@ -2,6 +2,7 @@ import { worldData } from '../data/world';
 import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
 import { formatMinutesClockLabel } from '../state/store';
 import type { GameState } from '../state/store';
+import { formatGameEffectSummaries } from '../player/effectSummary';
 import { resolveVisualSelection } from '../visual/assetCatalog';
 
 const escapeHtml = (value: string): string =>
@@ -39,6 +40,21 @@ const phaseLabels = {
   resolution: '收束'
 };
 
+const attributeLabels = {
+  intelligence: '智力',
+  stamina: '体力',
+  agility: '敏捷',
+  insight: '悟性',
+  hp: 'HP'
+};
+
+const academicLabels = {
+  math: '数学',
+  literature: '语文',
+  english: '英语',
+  physics: '物理'
+};
+
 const formatTimeInputValue = (minutes: number): string => {
   const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
   const hour = Math.floor(normalized / 60);
@@ -58,6 +74,7 @@ const renderAppTopBar = (state: GameState, title: string): string => `
 const renderBottomNav = (state: GameState, options: { hasEventContext?: boolean } = {}): string => {
   const isGame = state.ui.currentPage === 'game';
   const isTask = state.ui.currentPage === 'task-planning' || state.ui.currentPage === 'task-running' || state.ui.currentPage === 'decision';
+  const isCharacter = state.ui.currentPage === 'character';
   const hasEventContext = options.hasEventContext ?? false;
   const canPlanTask = state.ui.mode !== 'event' && !state.ui.isSending;
 
@@ -75,7 +92,7 @@ const renderBottomNav = (state: GameState, options: { hasEventContext?: boolean 
         <span aria-hidden="true">✓</span>
         <small>任务</small>
       </button>
-      <button disabled>
+      <button class="${isCharacter ? 'is-active' : ''}" data-action="open-character">
         <span aria-hidden="true">●</span>
         <small>角色</small>
       </button>
@@ -101,6 +118,26 @@ const renderTaskSegment = (segment: NonNullable<GameState['task']['activeTask']>
     }
   </div>
 `;
+
+const renderSettlementEffectsCard = (effects: GameState['settlement']['lastEffects']): string => {
+  const summaries = formatGameEffectSummaries(effects);
+
+  if (!summaries.length) {
+    return '';
+  }
+
+  return `
+    <div class="settings-card settlement-effects-card" data-testid="settlement-effects-card">
+      <div class="settings-section-heading">
+        <strong>属性变化</strong>
+        <span>${summaries.length} 项</span>
+      </div>
+      <ul class="settlement-effect-list">
+        ${summaries.map((summary) => `<li>${escapeHtml(summary)}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+};
 
 export const createAppMarkup = (state: GameState): string => {
   const currentRegion = getCurrentRegion(state);
@@ -316,6 +353,7 @@ export const createAppMarkup = (state: GameState): string => {
           Math.max(0, Math.round(((task.currentMinutes - task.startMinutes) / (task.endMinutes - task.startMinutes)) * 100))
         )
       : 0;
+    const isResultTaskResolving = !!task && task.executionMode === 'result' && state.ui.isSending;
     return `
       <div class="phone-frame phone-frame--settings phone-frame--task-running">
         <section class="settings-page task-page task-running-page" data-testid="task-running-page">
@@ -371,75 +409,103 @@ export const createAppMarkup = (state: GameState): string => {
                       data-action="generate-task-image"
                       aria-label="${escapeHtml(isGeneratingTaskImage ? '正在生成任务图' : '重新生成任务图')}"
                       title="${escapeHtml(isGeneratingTaskImage ? '正在生成任务图' : '重新生成任务图')}"
-                      ${isGeneratingTaskImage ? 'disabled' : ''}
+                      ${isGeneratingTaskImage || state.ui.isSending ? 'disabled' : ''}
                     >
                       <span aria-hidden="true">↻</span>
                     </button>
                   </div>
                   ${taskImageError ? `<div class="event-image-error" role="alert">出图失败：${escapeHtml(taskImageError)}</div>` : ''}
                 </section>
-                <article class="task-log" data-chat-history>
-                  ${
-                    task.segments.length
-                      ? task.segments.map(renderTaskSegment).join('')
-                      : `<div class="story-placeholder">${escapeHtml(state.ui.isSending ? '正在推演任务中...' : '还没有生成任务片段。')}</div>`
-                  }
-                  ${task.transcript
-                    .map(
-                      (message) => `
-                        <div class="chat-message ${message.role}">
-                          <div class="chat-label">${escapeHtml(message.label)}</div>
-                          <div class="chat-content">${escapeHtml(message.content)}</div>
+                ${
+                  isResultTaskResolving
+                    ? `
+                      <section class="task-result-loading-card" data-testid="task-result-loading" aria-live="polite">
+                        <div class="task-result-loading-orb" aria-hidden="true">
+                          <span></span>
+                          <span></span>
+                          <span></span>
                         </div>
-                      `
-                    )
-                    .join('')}
-                  ${
-                    task.streamingReply
-                      ? `
-                        <div
-                          class="chat-message character is-streaming"
-                          data-task-streaming-bubble
-                          role="button"
-                          tabindex="0"
-                          aria-label="点击加速显示任务文本"
-                          title="点击加速显示任务文本"
-                        >
-                          <div class="chat-label">${escapeHtml(task.streamingLabel || '世界')}</div>
-                          <div class="chat-content" data-task-streaming-content>${escapeHtml(task.streamingReply)}<span class="stream-cursor"></span></div>
+                        <div class="task-result-loading-copy">
+                          <p>后台生成中</p>
+                          <h2>正在推演任务结果</h2>
+                          <span>模型正在根据当前角色数据、世界记忆和任务内容，生成这次行动的结算影响。</span>
                         </div>
-                      `
-                      : ''
-                  }
-                  ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
-                </article>
-                <div class="input-row task-input-row ${task.controlMode === 'manual' ? '' : 'task-input-row--auto'}">
-                  ${
-                    task.controlMode === 'manual'
-                      ? `<textarea placeholder="手动托管时输入你的介入内容。" ${!state.ui.isSending ? '' : 'disabled'}></textarea>`
-                      : ''
-                  }
-                  <div class="action-row task-action-row">
-                    ${
-                      task.executionMode === 'process'
-                        ? task.controlMode === 'manual'
-                          ? `
-                            <button data-action="task-auto-mode" ${state.ui.isSending ? 'disabled' : ''}>交还自动</button>
-                          `
-                          : `
-                            <button data-action="task-next-segment" ${state.ui.isSending || task.currentMinutes >= task.endMinutes ? 'disabled' : ''}>下一段</button>
-                            <button data-action="task-manual-mode" ${state.ui.isSending ? 'disabled' : ''}>手动接管</button>
-                          `
-                        : ''
-                    }
-                    <button data-action="task-finish" ${state.ui.isSending ? 'disabled' : ''}>完成任务</button>
-                    ${
-                      task.controlMode === 'manual'
-                        ? `<button data-action="task-send" ${!state.ui.isSending ? '' : 'disabled'}>发送</button>`
-                        : ''
-                    }
-                  </div>
-                </div>
+                        <div class="task-result-loading-meta">
+                          <span>任务：${escapeHtml(task.title)}</span>
+                          <span>时间：${escapeHtml(formatMinutesClockLabel(task.startMinutes))} - ${escapeHtml(formatMinutesClockLabel(task.endMinutes))}</span>
+                        </div>
+                        <div class="task-result-loading-steps" aria-label="任务推演阶段">
+                          <span class="is-active">读取角色数据</span>
+                          <span>推演行动经过</span>
+                          <span>结算属性与背包</span>
+                        </div>
+                      </section>
+                    `
+                    : `
+                      <article class="task-log" data-chat-history>
+                        ${
+                          task.segments.length
+                            ? task.segments.map(renderTaskSegment).join('')
+                            : `<div class="story-placeholder">${escapeHtml(state.ui.isSending ? '正在推演任务中...' : '还没有生成任务片段。')}</div>`
+                        }
+                        ${task.transcript
+                          .map(
+                            (message) => `
+                              <div class="chat-message ${message.role}">
+                                <div class="chat-label">${escapeHtml(message.label)}</div>
+                                <div class="chat-content">${escapeHtml(message.content)}</div>
+                              </div>
+                            `
+                          )
+                          .join('')}
+                        ${
+                          task.streamingReply
+                            ? `
+                              <div
+                                class="chat-message character is-streaming"
+                                data-task-streaming-bubble
+                                role="button"
+                                tabindex="0"
+                                aria-label="点击加速显示任务文本"
+                                title="点击加速显示任务文本"
+                              >
+                                <div class="chat-label">${escapeHtml(task.streamingLabel || '世界')}</div>
+                                <div class="chat-content" data-task-streaming-content>${escapeHtml(task.streamingReply)}<span class="stream-cursor"></span></div>
+                              </div>
+                            `
+                            : ''
+                        }
+                        ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
+                      </article>
+                      <div class="input-row task-input-row ${task.controlMode === 'manual' ? '' : 'task-input-row--auto'}">
+                        ${
+                          task.controlMode === 'manual'
+                            ? `<textarea placeholder="手动托管时输入你的介入内容。" ${!state.ui.isSending ? '' : 'disabled'}></textarea>`
+                            : ''
+                        }
+                        <div class="action-row task-action-row">
+                          ${
+                            task.executionMode === 'process'
+                              ? task.controlMode === 'manual'
+                                ? `
+                                  <button data-action="task-auto-mode" ${state.ui.isSending ? 'disabled' : ''}>交还自动</button>
+                                `
+                                : `
+                                  <button data-action="task-next-segment" ${state.ui.isSending || task.currentMinutes >= task.endMinutes ? 'disabled' : ''}>下一段</button>
+                                  <button data-action="task-manual-mode" ${state.ui.isSending ? 'disabled' : ''}>手动接管</button>
+                                `
+                              : ''
+                          }
+                          <button data-action="task-finish" ${state.ui.isSending ? 'disabled' : ''}>完成任务</button>
+                          ${
+                            task.controlMode === 'manual'
+                              ? `<button data-action="task-send" ${!state.ui.isSending ? '' : 'disabled'}>发送</button>`
+                              : ''
+                          }
+                        </div>
+                      </div>
+                    `
+                }
               `
               : `
                 <div class="settings-card event-detail-empty">
@@ -496,6 +562,7 @@ export const createAppMarkup = (state: GameState): string => {
               <strong>刚完成的任务</strong>
               <p>${escapeHtml(state.task.lastCompletedSummary || '上一段行动已经结束，世界重新回到可选择的状态。')}</p>
             </div>
+            ${renderSettlementEffectsCard(state.settlement.lastEffects)}
             ${
               completedTask
                 ? `
@@ -544,6 +611,124 @@ export const createAppMarkup = (state: GameState): string => {
               <button class="settings-action-button" data-action="open-task-planning">安排新任务</button>
               <button class="settings-action-button decision-secondary" data-action="back-to-game">回到地图探索</button>
             </div>
+          </div>
+          ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
+        </section>
+      </div>
+    `;
+  }
+
+  if (state.ui.currentPage === 'character') {
+    const attributeRows = Object.entries(state.player.attributes)
+      .map(([key, value]) => {
+        const label = attributeLabels[key as keyof typeof attributeLabels] ?? key;
+
+        return `
+          <div class="player-stat-row">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(String(value))}</strong>
+          </div>
+        `;
+      })
+      .join('');
+    const academicRows = Object.entries(state.player.academics)
+      .map(([key, value]) => {
+        const label = academicLabels[key as keyof typeof academicLabels] ?? key;
+
+        return `
+          <div class="player-stat-row">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(String(value))}</strong>
+          </div>
+        `;
+      })
+      .join('');
+    const inventoryMarkup = state.player.inventory.items.length
+      ? state.player.inventory.items
+          .map(
+            (item) => `
+              <article class="inventory-item-card">
+                <div class="settings-section-heading">
+                  <strong>${escapeHtml(item.name)}</strong>
+                  <span>x${escapeHtml(String(item.quantity))}</span>
+                </div>
+                <p>${escapeHtml(item.description)}</p>
+                <p class="inventory-ability">${escapeHtml(item.abilityText)}</p>
+                <div class="inventory-effects">
+                  ${
+                    item.effects.length
+                      ? item.effects
+                          .map(
+                            (effect) =>
+                              `<span>${escapeHtml(
+                                [effect.type, effect.scope ? `scope=${effect.scope}` : '', effect.value !== undefined ? `value=${String(effect.value)}` : '']
+                                  .filter(Boolean)
+                                  .join(' · ')
+                              )}</span>`
+                          )
+                          .join('')
+                      : '<span>暂无结构化效果</span>'
+                  }
+                </div>
+              </article>
+            `
+          )
+          .join('')
+      : '<div class="settings-card event-detail-empty"><h2>背包还是空的</h2><p>任务或事件结算后，获得的物品会出现在这里。</p></div>';
+    const settlementEffects = state.settlement.lastEffects.length
+      ? `
+        <div class="settings-card">
+          <div class="settings-section-heading">
+            <strong>最近结算影响</strong>
+            <span>${state.settlement.lastEffects.length} 项</span>
+          </div>
+          <ul class="event-detail-list">
+            ${state.settlement.lastEffects
+              .map((effect) => `<li>${escapeHtml(JSON.stringify(effect))}</li>`)
+              .join('')}
+          </ul>
+        </div>
+      `
+      : '';
+
+    return `
+      <div class="phone-frame phone-frame--settings">
+        <section class="settings-page character-page" data-testid="character-page">
+          ${renderAppTopBar(state, '角色')}
+          <header class="settings-header">
+            <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
+            <div>
+              <p>当前权威数据</p>
+              <h1>主角状态</h1>
+            </div>
+          </header>
+          <div class="settings-scroll-content settings-panel-scroll">
+            <div class="settings-card player-money-card">
+              <span>当前资产</span>
+              <strong>${escapeHtml(String(state.player.money))}</strong>
+            </div>
+            <div class="settings-card">
+              <div class="settings-section-heading">
+                <strong>基础属性</strong>
+                <span>角色能力</span>
+              </div>
+              <div class="player-stat-grid">${attributeRows}</div>
+            </div>
+            <div class="settings-card">
+              <div class="settings-section-heading">
+                <strong>学科能力</strong>
+                <span>校园表现</span>
+              </div>
+              <div class="player-stat-grid">${academicRows}</div>
+            </div>
+            <div class="settings-card">
+              <div class="settings-section-heading">
+                <strong>背包</strong>
+                <span>${state.player.inventory.items.length} 件物品</span>
+              </div>
+            </div>
+            ${inventoryMarkup}
+            ${settlementEffects}
           </div>
           ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>

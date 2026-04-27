@@ -50,7 +50,8 @@ describe('chatClient helpers', () => {
       eventTitle: '放学后的空教室',
       castName: '林澄',
       transcript: ['你：你今天还不回家吗？'],
-      playerInput: '我走近一步，看着她。'
+      playerInput: '我走近一步，看着她。',
+      playerStatePrompt: '【当前权威角色数据】\n金钱：100'
     });
 
     expect(payload.model).toBe('deepseek-reasoner');
@@ -61,6 +62,8 @@ describe('chatClient helpers', () => {
     expect(payload.messages[0].content).toContain('保持现代恋爱文字冒险的细腻语气');
     expect(payload.messages[0].content).toContain('不要代替玩家');
     expect(payload.messages[1].content).toContain('性别：女');
+    expect(payload.messages[1].content).toContain('【当前权威角色数据】');
+    expect(payload.messages[1].content).toContain('以当前权威角色数据为准');
   });
 
   it('extracts assistant reply text from chat completion response', () => {
@@ -273,6 +276,7 @@ describe('chatClient helpers', () => {
 
     expect(resultPayload.messages[1].content).toContain('晨跑一小时');
     expect(resultPayload.messages[1].content).toContain('忽略细节过程');
+    expect(resultPayload.messages[0].content).toContain('effects 是这次任务对玩家数值和背包的影响数组');
     expect(segmentPayload.messages[0].content).toContain('突发情况只能作为任务过程的一部分');
     expect(segmentPayload.messages[1].content).toContain('06:00 到 06:10');
     expect(manualPayload.stream).toBe(true);
@@ -340,7 +344,9 @@ describe('chatClient helpers', () => {
       segmentMinutes: 10
     });
     const task = state.task.activeTask!;
-    const settlement = parseTaskSettlement('{"summary":"你完成了一小时复习。","facts":["复习了错题","状态更稳定"]}');
+    const settlement = parseTaskSettlement(
+      '{"summary":"你完成了一小时复习。","facts":["复习了错题","状态更稳定"],"effects":[{"type":"academic_delta","subject":"math","delta":2}]}'
+    );
     const segment = parseTaskSegment({
       task,
       fromLabel: '20:00',
@@ -350,16 +356,61 @@ describe('chatClient helpers', () => {
 
     expect(settlement.summary).toContain('完成了一小时复习');
     expect(settlement.facts).toContain('复习了错题');
+    expect(settlement.effects).toEqual([{ type: 'academic_delta', subject: 'math', delta: 2 }]);
     expect(segment.content).toContain('错题本');
     expect(segment.complication).toBe('手机亮了一下');
     expect(segment.attentionLevel).toBe('high');
   });
 
+  it('infers an inventory effect when a task settlement mentions a purchased item but omits effects', () => {
+    const settlement = parseTaskSettlement(
+      '{"summary":"你顺利找到了合适的剪刀并快速结账，带着新剪刀离开了超市。","facts":["你顺利找到了合适的剪刀并快速结账"]}'
+    );
+
+    expect(settlement.effects).toHaveLength(1);
+    expect(settlement.effects[0]).toMatchObject({
+      type: 'item_add',
+      item: {
+        name: '剪刀'
+      }
+    });
+  });
+
+  it('accepts common Chinese effect aliases from settlement responses', () => {
+    const settlement = parseTaskSettlement(
+      '{"summary":"你买到了剪刀。","facts":[],"effects":[{"type":"获得物品","item":{"name":"剪刀","description":"普通剪刀","ability":"可以剪开包装","effects":[{"type":"cut_simple_material"}]}},{"type":"金钱变化","delta":-12}]}'
+    );
+
+    expect(settlement.effects).toEqual([
+      {
+        type: 'item_add',
+        item: {
+          id: undefined,
+          name: '剪刀',
+          description: '普通剪刀',
+          abilityText: '可以剪开包装',
+          effects: [{ type: 'cut_simple_material', value: undefined, scope: undefined }],
+          quantity: undefined
+        },
+        quantity: undefined,
+        reason: undefined
+      },
+      {
+        type: 'money_delta',
+        delta: -12,
+        reason: undefined
+      }
+    ]);
+  });
+
   it('parses settled event minutes from json', () => {
-    const settlement = parseEventTimeSettlement('{"minutesElapsed":45,"summary":"这次交流拉长到了晚饭前后。"}');
+    const settlement = parseEventTimeSettlement(
+      '{"minutesElapsed":45,"summary":"这次交流拉长到了晚饭前后。","effects":[{"type":"attribute_delta","target":"hp","delta":-3}]}'
+    );
 
     expect(settlement.minutesElapsed).toBe(45);
     expect(settlement.summary).toContain('晚饭前后');
+    expect(settlement.effects).toEqual([{ type: 'attribute_delta', target: 'hp', delta: -3 }]);
   });
 
   it('falls back to a longer duration when transcript is dense and event phases advanced', () => {
