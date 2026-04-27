@@ -20,6 +20,15 @@ import { applyGameEffects } from '../player/effects';
 import { formatGameEffectsInline } from '../player/effectSummary';
 import { serializePlayerStateForPrompt } from '../player/serializeForPrompt';
 import { loadStoredPlayerState, saveStoredPlayerState } from '../player/storage';
+import {
+  exportGameSave,
+  importGameSave,
+  isGameStateBusy,
+  resetGameProgress,
+  restoreGameSaveBundle,
+  serializeGameSave
+} from '../save/gameSave';
+import { saveStoredGameState } from '../save/storage';
 import type { GameEffect } from '../player/types';
 import {
   appendActiveEventFacts,
@@ -140,6 +149,10 @@ const persistPlayerState = (state: GameState): void => {
   saveStoredPlayerState(state.player);
 };
 
+const persistGameState = (state: GameState): void => {
+  saveStoredGameState(state);
+};
+
 const getPlayerStatePrompt = (state: GameState): string => serializePlayerStateForPrompt(state.player);
 
 const CONTINUE_STORY_PROMPT = '玩家暂时没有回应，只是在等待、观察和感受当前气氛。请根据当前场景自然推进一小段剧情，然后停在等待玩家选择或回应的位置。';
@@ -243,6 +256,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
   };
 
   const rerender = () => {
+    persistGameState(state);
     const previousHistory = root.querySelector<HTMLElement>('[data-chat-history]');
     if (previousHistory) {
       updateHistoryScrollPreference(previousHistory);
@@ -815,6 +829,76 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     rerender();
   };
 
+  const downloadTextFile = (filename: string, content: string): void => {
+    const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportCurrentGameSave = async (): Promise<void> => {
+    if (isGameStateBusy(state)) {
+      window.alert('请等待当前生成完成后再导出存档。');
+      return;
+    }
+
+    try {
+      const bundle = await exportGameSave(state);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      downloadTextFile(`gala-game-save-${timestamp}.json`, serializeGameSave(bundle));
+      window.alert('游戏数据已导出。');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : '导出游戏数据失败。');
+    }
+  };
+
+  const importSelectedGameSave = async (file: File): Promise<void> => {
+    if (isGameStateBusy(state)) {
+      window.alert('请等待当前生成完成后再导入存档。');
+      return;
+    }
+
+    if (!window.confirm('导入存档会覆盖当前游戏进度，确定继续吗？')) {
+      return;
+    }
+
+    try {
+      const bundle = await importGameSave(file);
+      state = restoreGameSaveBundle(bundle);
+      persistSettings(state);
+      persistPlayerState(state);
+      persistGameState(state);
+      window.alert('游戏数据已导入。');
+      rerender();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : '导入游戏数据失败。');
+    }
+  };
+
+  const resetCurrentGameProgress = (): void => {
+    if (isGameStateBusy(state)) {
+      window.alert('请等待当前生成完成后再重置游戏进度。');
+      return;
+    }
+
+    if (!window.confirm('重置后会清空当前剧情进度、角色属性和背包，但会保留模型与文字速度设置。确定继续吗？')) {
+      return;
+    }
+
+    state = resetGameProgress(state.settings);
+    persistSettings(state);
+    persistPlayerState(state);
+    persistGameState(state);
+    window.alert('游戏进度已重置。');
+    rerender();
+  };
+
   const bindEvents = () => {
     root.querySelector<HTMLElement>('[data-chat-history]')?.addEventListener('scroll', (event) => {
       updateHistoryScrollPreference(event.currentTarget as HTMLElement);
@@ -870,6 +954,36 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       state = openSettingsPage(state);
       rerender();
     }));
+
+    root.querySelector<HTMLButtonElement>('[data-action="export-game-save"]')?.addEventListener('click', () => {
+      void exportCurrentGameSave();
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="import-game-save"]')?.addEventListener('click', () => {
+      if (isGameStateBusy(state)) {
+        window.alert('请等待当前生成完成后再导入存档。');
+        return;
+      }
+
+      root.querySelector<HTMLInputElement>('[data-game-save-input]')?.click();
+    });
+
+    root.querySelector<HTMLInputElement>('[data-game-save-input]')?.addEventListener('change', (event) => {
+      const input = event.currentTarget as HTMLInputElement;
+      const file = input.files?.[0];
+
+      if (!file) {
+        return;
+      }
+
+      void importSelectedGameSave(file).finally(() => {
+        input.value = '';
+      });
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="reset-game-progress"]')?.addEventListener('click', () => {
+      resetCurrentGameProgress();
+    });
 
     root.querySelectorAll<HTMLButtonElement>('[data-action="open-task-planning"]').forEach((button) => button.addEventListener('click', () => {
       state = openTaskPlanningPage(state);

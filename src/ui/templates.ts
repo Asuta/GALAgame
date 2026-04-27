@@ -791,6 +791,19 @@ export const createAppMarkup = (state: GameState): string => {
               </div>
               <button class="settings-action-button" data-action="compress">整理线索</button>
             </div>
+            <div class="settings-card save-management-card">
+              <div class="settings-section-heading">
+                <strong>数据管理</strong>
+                <span>导入 / 导出 / 重置</span>
+              </div>
+              <p class="save-management-copy">导出当前完整进度，或把同版本客户端导出的存档导入回来。</p>
+              <div class="save-management-actions">
+                <button class="settings-action-button" data-action="export-game-save">导出游戏数据</button>
+                <button class="settings-action-button decision-secondary" data-action="import-game-save">导入游戏数据</button>
+                <button class="settings-action-button settings-danger-button" data-action="reset-game-progress">重置游戏进度</button>
+              </div>
+              <input data-game-save-input class="visually-hidden-file" type="file" accept="application/json,.json" />
+            </div>
           </div>
           ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
         </section>

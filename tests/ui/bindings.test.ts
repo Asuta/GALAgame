@@ -56,7 +56,9 @@ vi.mock('../../src/logic/chatClient', async () => {
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
 import { bindUi } from '../../src/ui/bindings';
-import { appendTranscriptMessage, createInitialState, startEvent } from '../../src/state/store';
+import { appendTranscriptMessage, createInitialState, startEvent, updateMemory } from '../../src/state/store';
+import { exportGameSave, serializeGameSave } from '../../src/save/gameSave';
+import { loadStoredGameState } from '../../src/save/storage';
 
 let historyScrollTopStore = new WeakMap<HTMLElement, number>();
 let historyClientHeight = 0;
@@ -143,6 +145,7 @@ const createDeferred = <T>() => {
 describe('bindUi scene switching', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
+    localStorage.clear();
     historyScrollTopStore = new WeakMap<HTMLElement, number>();
     historyClientHeight = 240;
     historyScrollHeight = 800;
@@ -364,6 +367,86 @@ describe('bindUi scene switching', () => {
 
     expect(document.body.textContent).toContain('选择一个区域');
     expect(document.body.textContent).not.toContain('流式输出速度');
+  });
+
+  it('shows game data import, export, and reset controls in settings', async () => {
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-action="open-settings"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.body.textContent).toContain('数据管理');
+    expect(document.querySelector('[data-action="export-game-save"]')).not.toBeNull();
+    expect(document.querySelector('[data-action="import-game-save"]')).not.toBeNull();
+    expect(document.querySelector('[data-action="reset-game-progress"]')).not.toBeNull();
+    expect(document.querySelector('[data-game-save-input]')).not.toBeNull();
+  });
+
+  it('resets game progress from settings while preserving settings', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+    (document.querySelector('[data-action="open-settings"]') as HTMLButtonElement).click();
+    await flushUi();
+    (Array.from(document.querySelectorAll<HTMLButtonElement>('[data-model-id]')).find(
+      (button) => button.dataset.modelId === 'gpt-4o-mini'
+    ) as HTMLButtonElement).click();
+    await flushUi();
+
+    (document.querySelector('[data-action="reset-game-progress"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const storedState = loadStoredGameState();
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(alertSpy).toHaveBeenCalledWith('游戏进度已重置。');
+    expect(storedState?.ui.currentPage).toBe('game');
+    expect(storedState?.settings.currentModel).toBe('gpt-4o-mini');
+
+    confirmSpy.mockRestore();
+    alertSpy.mockRestore();
+  });
+
+  it('imports a selected save file and persists the restored state', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const importedState = updateMemory(
+      {
+        ...createInitialState(),
+        player: {
+          ...createInitialState().player,
+          money: 456
+        }
+      },
+      {
+        summary: '导入后的故事摘要。',
+        facts: ['导入恢复了记忆']
+      }
+    );
+    const bundle = await exportGameSave(importedState);
+    const file = new File([serializeGameSave(bundle)], 'save.json', { type: 'application/json' });
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+    (document.querySelector('[data-action="open-settings"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const input = document.querySelector<HTMLInputElement>('[data-game-save-input]')!;
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [file]
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushUi();
+    await waitForStreamTick();
+
+    const storedState = loadStoredGameState();
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(alertSpy).toHaveBeenCalledWith('游戏数据已导入。');
+    expect(storedState?.memory.summary).toContain('导入后的故事摘要');
+    expect(storedState?.player.money).toBe(456);
+
+    confirmSpy.mockRestore();
+    alertSpy.mockRestore();
   });
 
   it('changes model from the settings page and reflects it in the game header', async () => {

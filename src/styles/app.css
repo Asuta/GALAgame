@@ -1565,6 +1565,41 @@ select:focus-visible {
   color: #ffe0a0;
 }
 
+.save-management-card {
+  border-color: rgba(53, 217, 242, 0.22);
+}
+
+.save-management-copy {
+  margin: 0 0 10px;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.save-management-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-danger-button {
+  border-color: rgba(255, 127, 138, 0.42);
+  background: rgba(255, 127, 138, 0.12);
+  color: #ffd3d8;
+}
+
+.settings-danger-button:hover:not(:disabled) {
+  border-color: rgba(255, 127, 138, 0.72);
+  background: rgba(255, 127, 138, 0.18);
+}
+
+.visually-hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .player-money-card {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;

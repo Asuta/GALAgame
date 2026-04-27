@@ -649,6 +649,7 @@ describe('createApp', () => {
       currentModel: 'gpt-4o-mini',
       streamCharsPerSecond: 5
     }));
+    const loadStoredGameState = vi.fn(() => null);
 
     vi.resetModules();
     vi.doMock('../../src/ui/bindings', () => ({
@@ -659,6 +660,9 @@ describe('createApp', () => {
     }));
     vi.doMock('../../src/settings/storage', () => ({
       loadStoredSettings
+    }));
+    vi.doMock('../../src/save/storage', () => ({
+      loadStoredGameState
     }));
 
     const { createApp } = await import('../../src/app/createApp');
@@ -676,10 +680,12 @@ describe('createApp', () => {
     });
     expect(createInitialState).toHaveBeenCalledOnce();
     expect(loadStoredSettings).toHaveBeenCalledOnce();
+    expect(loadStoredGameState).toHaveBeenCalledOnce();
 
     vi.doUnmock('../../src/ui/bindings');
     vi.doUnmock('../../src/state/store');
     vi.doUnmock('../../src/settings/storage');
+    vi.doUnmock('../../src/save/storage');
     vi.resetModules();
   });
 });
