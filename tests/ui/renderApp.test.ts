@@ -43,6 +43,24 @@ describe('renderApp', () => {
     expect(document.querySelector('[data-action="compress"]')).toBeNull();
   });
 
+  it('renders region choices from runtime world data', () => {
+    const state = {
+      ...createInitialState(),
+      world: {
+        ...createInitialState().world,
+        data: {
+          ...worldData,
+          regions: [...worldData.regions, { id: 'toilet', name: '厕所', sceneIds: [] }]
+        }
+      }
+    };
+
+    document.body.innerHTML = '<div id="app"></div>';
+    renderApp(document.querySelector('#app') as HTMLDivElement, state);
+
+    expect(document.body.textContent).toContain('厕所');
+  });
+
   it('renders chat history entries with speaker labels', () => {
     let state = createInitialState();
     state = appendTranscriptMessage(state, { role: 'player', label: '你', content: '今天你怎么还没回家？' });

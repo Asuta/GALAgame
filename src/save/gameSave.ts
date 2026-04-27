@@ -3,7 +3,7 @@ import { createInitialState, type GameState } from '../state/store';
 import { clampStreamCharsPerSecond, type StoredSettings } from '../settings/storage';
 import { normalizePlayerState } from '../player/storage';
 import type { PlayerState } from '../player/types';
-import type { WorldData } from '../data/types';
+import type { SceneEventSeed, TimeSlot, WorldData } from '../data/types';
 
 export const SAVE_APP_NAME = 'romance-map-chat-game';
 export const SAVE_SCHEMA_VERSION = 1;
@@ -30,6 +30,75 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+export const normalizeWorldData = (value: unknown): WorldData => {
+  if (!isRecord(value)) {
+    return cloneJson(worldData);
+  }
+
+  const normalizeSeed = (seed: unknown): SceneEventSeed => {
+    const source = isRecord(seed) ? seed : {};
+
+    return {
+      baseTitle: typeof source.baseTitle === 'string' ? source.baseTitle : '未命名事件',
+      castIds: isStringArray(source.castIds) ? source.castIds : [],
+      tones: isStringArray(source.tones) ? source.tones : [],
+      buildUpGoals: isStringArray(source.buildUpGoals) ? source.buildUpGoals : ['让玩家观察这个地点的异常之处'],
+      triggerHints: isStringArray(source.triggerHints) ? source.triggerHints : ['这里出现了一点微妙变化'],
+      resolutionDirections: isStringArray(source.resolutionDirections) ? source.resolutionDirections : ['把这一幕暂时收束'],
+      premiseTemplates: isStringArray(source.premiseTemplates) ? source.premiseTemplates : ['这里似乎刚刚发生过什么。'],
+      suspenseSeeds: isStringArray(source.suspenseSeeds) ? source.suspenseSeeds : [],
+      preferredTimeSlots: isStringArray(source.preferredTimeSlots)
+        ? source.preferredTimeSlots.filter((slot): slot is TimeSlot =>
+            ['dawn', 'morning', 'afternoon', 'evening', 'night', 'late_night'].includes(slot)
+          )
+        : undefined
+    };
+  };
+
+  const regions = Array.isArray(value.regions)
+    ? value.regions.filter(isRecord).map((region) => ({
+        id: typeof region.id === 'string' ? region.id : '',
+        name: typeof region.name === 'string' ? region.name : '',
+        sceneIds: isStringArray(region.sceneIds) ? region.sceneIds : []
+      })).filter((region) => region.id && region.name)
+    : [];
+
+  const scenes = Array.isArray(value.scenes)
+    ? value.scenes.filter(isRecord).map((scene) => ({
+        ...scene,
+        id: typeof scene.id === 'string' ? scene.id : '',
+        regionId: typeof scene.regionId === 'string' ? scene.regionId : '',
+        name: typeof scene.name === 'string' ? scene.name : '',
+        description: typeof scene.description === 'string' ? scene.description : '',
+        eventSeed: normalizeSeed(scene.eventSeed),
+        ...(isRecord(scene.fallbackEventSeed) ? { fallbackEventSeed: normalizeSeed(scene.fallbackEventSeed) } : {})
+      })).filter((scene) => scene.id && scene.regionId && scene.name)
+    : [];
+
+  const characters = Array.isArray(value.characters)
+    ? value.characters.filter(isRecord).map((character) => ({
+        id: typeof character.id === 'string' ? character.id : '',
+        name: typeof character.name === 'string' ? character.name : '',
+        gender: typeof character.gender === 'string' ? character.gender : '',
+        identity: typeof character.identity === 'string' ? character.identity : '',
+        age: typeof character.age === 'string' ? character.age : '',
+        personality: typeof character.personality === 'string' ? character.personality : '',
+        speakingStyle: typeof character.speakingStyle === 'string' ? character.speakingStyle : '',
+        relationshipToPlayer: typeof character.relationshipToPlayer === 'string' ? character.relationshipToPlayer : '',
+        hardRules: isStringArray(character.hardRules) ? character.hardRules : []
+      })).filter((character) => character.id && character.name)
+    : [];
+
+  return {
+    regions,
+    scenes,
+    characters
+  };
+};
 
 const normalizeSettings = (value: unknown, fallback: GameState['settings']): GameState['settings'] => {
   const source = isRecord(value) ? value : {};
@@ -92,7 +161,8 @@ export const isGameStateBusy = (state: GameState): boolean =>
 export const normalizeImportedGameState = (
   value: unknown,
   playerValue?: unknown,
-  settingsValue?: unknown
+  settingsValue?: unknown,
+  worldValue?: unknown
 ): GameState => {
   const fallback = createInitialState();
 
@@ -118,7 +188,8 @@ export const normalizeImportedGameState = (
     },
     world: {
       ...fallback.world,
-      ...(isRecord(incoming.world) ? incoming.world : {})
+      ...(isRecord(incoming.world) ? incoming.world : {}),
+      data: normalizeWorldData(worldValue ?? (isRecord(incoming.world) ? incoming.world.data : undefined))
     },
     event: {
       ...fallback.event,
@@ -226,7 +297,7 @@ export const exportGameSave = async (
     schemaVersion: SAVE_SCHEMA_VERSION,
     appName: SAVE_APP_NAME,
     exportedAt: (options.now ?? new Date()).toISOString(),
-    worldSnapshot: cloneJson(worldData),
+    worldSnapshot: cloneJson(exportedState.world.data),
     gameState: exportedState,
     player: normalizePlayerState(exportedState.player),
     settings: {
@@ -238,12 +309,6 @@ export const exportGameSave = async (
 };
 
 export const serializeGameSave = (bundle: GameSaveBundle): string => JSON.stringify(bundle, null, 2);
-
-const assertCompatibleWorld = (snapshot: unknown): void => {
-  if (JSON.stringify(snapshot) !== JSON.stringify(worldData)) {
-    throw new Error('这个存档可能不是当前版本生成的，世界设定不一致。');
-  }
-};
 
 export const parseGameSave = (text: string): GameSaveBundle => {
   let parsed: unknown;
@@ -262,14 +327,14 @@ export const parseGameSave = (text: string): GameSaveBundle => {
     throw new Error('存档版本不兼容。');
   }
 
-  assertCompatibleWorld(parsed.worldSnapshot);
+  const worldSnapshot = normalizeWorldData(parsed.worldSnapshot);
 
   return {
     schemaVersion: SAVE_SCHEMA_VERSION,
     appName: SAVE_APP_NAME,
     exportedAt: typeof parsed.exportedAt === 'string' ? parsed.exportedAt : '',
-    worldSnapshot: parsed.worldSnapshot as WorldData,
-    gameState: normalizeImportedGameState(parsed.gameState, parsed.player, parsed.settings),
+    worldSnapshot,
+    gameState: normalizeImportedGameState(parsed.gameState, parsed.player, parsed.settings, worldSnapshot),
     player: normalizePlayerState(parsed.player),
     settings: parsed.settings as StoredSettings,
     embeddedMedia: isRecord(parsed.embeddedMedia) ? (parsed.embeddedMedia as Record<string, EmbeddedMediaEntry>) : {}
@@ -287,7 +352,7 @@ const readFileAsText = async (file: File): Promise<string> =>
 export const importGameSave = async (file: File): Promise<GameSaveBundle> => parseGameSave(await readFileAsText(file));
 
 export const restoreGameSaveBundle = (bundle: GameSaveBundle): GameState =>
-  normalizeImportedGameState(bundle.gameState, bundle.player, bundle.settings);
+  normalizeImportedGameState(bundle.gameState, bundle.player, bundle.settings, bundle.worldSnapshot);
 
 export const resetGameProgress = (settings: GameState['settings']): GameState => {
   const initialState = createInitialState();

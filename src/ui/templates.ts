@@ -1,4 +1,3 @@
-import { worldData } from '../data/world';
 import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
 import { formatMinutesClockLabel } from '../state/store';
 import type { GameState } from '../state/store';
@@ -147,7 +146,7 @@ export const createAppMarkup = (state: GameState): string => {
   const visibleActiveEvent = getVisibleActiveEvent(state);
   const visiblePreparedEvent = getVisiblePreparedEvent(state);
 
-  const regionButtons = worldData.regions
+  const regionButtons = state.world.data.regions
     .map(
       (region) =>
         `<button class="choice-button" data-region-id="${escapeHtml(region.id)}">${escapeHtml(region.name)}</button>`
@@ -155,7 +154,7 @@ export const createAppMarkup = (state: GameState): string => {
     .join('');
 
   const sceneButtons = currentRegion
-    ? worldData.scenes
+    ? state.world.data.scenes
         .filter((scene) => scene.regionId === currentRegion.id)
         .map(
           (scene) =>

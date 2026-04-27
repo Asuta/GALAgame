@@ -1,11 +1,10 @@
-import { worldData } from '../data/world';
 import type { GameState } from './store';
 
 export const getCurrentRegion = (state: GameState) =>
-  worldData.regions.find((region) => region.id === state.navigation.currentRegionId) ?? null;
+  state.world.data.regions.find((region) => region.id === state.navigation.currentRegionId) ?? null;
 
 export const getCurrentScene = (state: GameState) =>
-  worldData.scenes.find((scene) => scene.id === state.navigation.currentSceneId) ?? null;
+  state.world.data.scenes.find((scene) => scene.id === state.navigation.currentSceneId) ?? null;
 
 export const getActiveEvent = (state: GameState) => state.event.activeEvent;
 

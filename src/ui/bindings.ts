@@ -1,4 +1,3 @@
-import { worldData } from '../data/world';
 import { requestGeneratedEventImage, requestGeneratedTaskImage } from '../logic/imageClient';
 import {
   requestEventImagePrompt,
@@ -89,17 +88,17 @@ import { resolveCharacterReference, resolveSceneBackground } from '../visual/ass
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;
 
 const resolveLocationLabel = (state: GameState): string => {
-  const region = worldData.regions.find((item) => item.id === state.navigation.currentRegionId);
-  const scene = worldData.scenes.find((item) => item.id === state.navigation.currentSceneId);
+  const region = state.world.data.regions.find((item) => item.id === state.navigation.currentRegionId);
+  const scene = state.world.data.scenes.find((item) => item.id === state.navigation.currentSceneId);
   return `${region?.name ?? '城市'}${scene ? ` / ${scene.name}` : ''}`;
 };
 
-const buildCharacterProfile = (name?: string): string => {
+const buildCharacterProfile = (state: GameState, name?: string): string => {
   if (!name) {
     return '当前场景没有固定对话角色。请以旁白和环境反馈为主，允许玩家等待、观察、发消息或自言自语，不要突然生成一个无关角色强行接话。';
   }
 
-  const character = worldData.characters.find((item) => item.name === name || item.id === name);
+  const character = state.world.data.characters.find((item) => item.name === name || item.id === name);
 
   if (!character) {
     return `角色名：${name}\n请严格保持该角色现有设定，不要擅自改变性别、身份与口吻。`;
@@ -271,7 +270,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
   };
 
   const openSceneEvent = async (sceneId: string) => {
-    const scene = worldData.scenes.find((item) => item.id === sceneId);
+    const scene = state.world.data.scenes.find((item) => item.id === sceneId);
 
     if (!scene) {
       return;
@@ -357,7 +356,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       await appendStreamWithRateLimit({
         source: requestStoryReplyStream({
           model: state.settings.currentModel,
-          characterProfile: buildCharacterProfile(activeEvent.cast[0]),
+          characterProfile: buildCharacterProfile(state, activeEvent.cast[0]),
           memorySummary: state.memory.summary,
           memoryFacts: state.memory.facts,
           locationLabel: activeEvent.locationLabel,
@@ -786,10 +785,10 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       return;
     }
 
-    const scene = worldData.scenes.find((item) => item.id === eventForImage.sceneId) ?? null;
+    const scene = state.world.data.scenes.find((item) => item.id === eventForImage.sceneId) ?? null;
     const referenceImageUrls = [
       resolveSceneBackground(eventForImage.sceneId, state.navigation.currentRegionId),
-      resolveCharacterReference(eventForImage.cast[0] ?? null)
+      resolveCharacterReference(eventForImage.cast[0] ?? null, state.world.data)
     ].filter((url): url is string => !!url);
 
     state = startEventImageGeneration(state, eventForImage.id);

@@ -1,6 +1,6 @@
-import { worldData } from '../data/world';
 import { getVisiblePreparedEvent } from '../state/selectors';
 import type { GameState } from '../state/store';
+import type { WorldData } from '../data/types';
 
 const REGION_BACKGROUNDS = {
   school: '/assets/backgrounds/region-school-main.png',
@@ -55,7 +55,7 @@ const isVisualSceneId = (value: string): value is VisualSceneId =>
 const isVisualCharacterId = (value: string): value is VisualCharacterId =>
   value in CHARACTER_PORTRAITS;
 
-const resolveCharacterPortrait = (castMember: string | null): string | null => {
+const resolveCharacterPortrait = (castMember: string | null, worldData: WorldData): string | null => {
   if (!castMember) {
     return null;
   }
@@ -93,7 +93,8 @@ export const resolveSceneBackground = (sceneId: string | null, regionId: string 
   return CITY_MAP_BACKGROUND;
 };
 
-export const resolveCharacterReference = (castMember: string | null): string | null => resolveCharacterPortrait(castMember);
+export const resolveCharacterReference = (castMember: string | null, worldData: WorldData): string | null =>
+  resolveCharacterPortrait(castMember, worldData);
 
 export const resolveVisualSelection = (state: GameState): VisualSelection => {
   const regionId = state.navigation.currentRegionId;
@@ -109,7 +110,7 @@ export const resolveVisualSelection = (state: GameState): VisualSelection => {
     };
   }
 
-  const region = worldData.regions.find((item) => item.id === regionId) ?? null;
+  const region = state.world.data.regions.find((item) => item.id === regionId) ?? null;
   const visualEvent = state.event.activeEvent ?? getVisiblePreparedEvent(state);
   const isEventVisual = !!visualEvent;
   const activeCharacterId = visualEvent?.cast[0] ?? null;
@@ -118,7 +119,7 @@ export const resolveVisualSelection = (state: GameState): VisualSelection => {
   return {
     mode: isEventVisual ? 'event' : 'region',
     background: generatedEventImage ?? resolveSceneBackground(sceneId, regionId),
-    character: isEventVisual && !generatedEventImage ? resolveCharacterPortrait(activeCharacterId) : null,
+    character: isEventVisual && !generatedEventImage ? resolveCharacterPortrait(activeCharacterId, state.world.data) : null,
     locationLabel: visualEvent?.locationLabel ?? region?.name ?? '世界地图',
     isGeneratedEventImage: !!generatedEventImage
   };

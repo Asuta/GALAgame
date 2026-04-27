@@ -11,7 +11,8 @@ import type {
   TaskExecutionMode,
   TaskRuntime,
   TaskSegment,
-  TimeSlot
+  TimeSlot,
+  WorldData
 } from '../data/types';
 
 export interface TranscriptMessage {
@@ -58,6 +59,7 @@ export interface GameState {
     label: string;
   };
   world: {
+    data: WorldData;
     revision: number;
     lastEventSummary: string;
   };
@@ -215,6 +217,7 @@ export const createInitialState = (): GameState => ({
     label: formatClockLabel(18, 0)
   },
   world: {
+    data: worldData,
     revision: 0,
     lastEventSummary: '世界还很安静，今天的故事刚准备开始。'
   },
@@ -271,7 +274,7 @@ export const enterRegion = (state: GameState, regionId: string): GameState => ({
 });
 
 export const enterScene = (state: GameState, sceneId: string): GameState => {
-  const scene = worldData.scenes.find((item) => item.id === sceneId);
+  const scene = state.world.data.scenes.find((item) => item.id === sceneId);
 
   if (!scene) {
     return state;
@@ -385,6 +388,7 @@ export const invalidateSceneEventCache = (state: GameState, sceneId: string): Ga
 export const recordWorldAdvance = (state: GameState, reason: string): GameState => ({
   ...state,
   world: {
+    ...state.world,
     revision: state.world.revision + 1,
     lastEventSummary: reason
   }
@@ -880,6 +884,7 @@ export const completeTask = (state: GameState, summary: string, facts: string[])
       label: formatClockLabel(nextHour, nextMinute)
     },
     world: {
+      ...state.world,
       revision: state.world.revision + 1,
       lastEventSummary: `任务【${state.task.activeTask.title}】已经完成。${summary}`
     },

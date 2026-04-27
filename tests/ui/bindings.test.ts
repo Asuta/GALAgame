@@ -436,8 +436,10 @@ describe('bindUi scene switching', () => {
       value: [file]
     });
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    await flushUi();
-    await waitForStreamTick();
+    for (let index = 0; index < 10 && alertSpy.mock.calls.length === 0; index += 1) {
+      await flushUi();
+      await waitForStreamTick();
+    }
 
     const storedState = loadStoredGameState();
     expect(confirmSpy).toHaveBeenCalledOnce();
@@ -545,8 +547,7 @@ describe('bindUi scene switching', () => {
     await flushUi();
     (document.querySelector('[data-action="continue-story"]') as HTMLButtonElement).click();
     await flushUi();
-    await new Promise((resolve) => window.setTimeout(resolve, 700));
-    await flushUi();
+    await waitForText('林晚：嗯？');
 
     expect(requestStoryReplyStreamMock).toHaveBeenCalledTimes(2);
     expect(document.body.textContent).toContain('旁白：她轻轻抬眼。林晚：');

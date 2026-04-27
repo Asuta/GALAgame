@@ -86,17 +86,16 @@ describe('game save bundles', () => {
     expect(restored.player.money).toBe(128);
     expect(restored.settings.currentModel).toBe('gpt-4o-mini');
     expect(() => parseGameSave('{bad json')).toThrow('存档文件不是有效的 JSON');
-    expect(() =>
-      parseGameSave(
-        serializeGameSave({
-          ...bundle,
-          worldSnapshot: {
-            ...worldData,
-            characters: []
-          }
-        })
-      )
-    ).toThrow('世界设定不一致');
+    const changedWorld = parseGameSave(
+      serializeGameSave({
+        ...bundle,
+        worldSnapshot: {
+          ...worldData,
+          regions: [...worldData.regions, { id: 'toilet', name: '厕所', sceneIds: [] }]
+        }
+      })
+    );
+    expect(changedWorld.gameState.world.data.regions.map((region) => region.id)).toContain('toilet');
   });
 
   it('resets game progress while preserving player settings', () => {
