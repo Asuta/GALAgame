@@ -1,101 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { worldData } from '../../src/data/world';
-import { createInitialState, enterRegion, openTaskPlanningPage, setPlayerState, startTask, updateMemory } from '../../src/state/store';
+import JSZip from 'jszip';
+import { createInitialState, enterRegion, openTaskPlanningPage, startTask, updateMemory } from '../../src/state/store';
 import { createInitialPlayerState } from '../../src/player/initialState';
 import {
-  exportGameSave,
+  exportGameSaveZip,
   importGameSave,
   isGameStateBusy,
-  parseGameSave,
   resetGameProgress,
-  restoreGameSaveBundle,
-  serializeGameSave
+  restoreGameSaveBundle
 } from '../../src/save/gameSave';
 import { loadStoredGameState, saveStoredGameState } from '../../src/save/storage';
 
 describe('game save bundles', () => {
   beforeEach(() => {
     localStorage.clear();
-  });
-
-  it('exports the full state with player, settings, world snapshot, and embedded media', async () => {
-    let state = enterRegion(createInitialState(), 'school');
-    state = updateMemory(state, {
-      summary: '你已经在教室里见过林澄。',
-      facts: ['林澄今天有点心事']
-    });
-    state = setPlayerState(state, {
-      ...createInitialPlayerState(),
-      money: 300
-    });
-    state = {
-      ...state,
-      event: {
-        ...state.event,
-        generatedImages: {
-          eventA: 'data:image/png;base64,abc'
-        },
-        generatedImagePrompts: {
-          eventA: '教室窗边的两人'
-        }
-      }
-    };
-
-    const bundle = await exportGameSave(state, { now: new Date('2026-04-27T10:00:00.000Z') });
-
-    expect(bundle.schemaVersion).toBe(1);
-    expect(bundle.appName).toBe('romance-map-chat-game');
-    expect(bundle.exportedAt).toBe('2026-04-27T10:00:00.000Z');
-    expect(bundle.worldSnapshot).toEqual(worldData);
-    expect(bundle.gameState.memory.summary).toContain('教室');
-    expect(bundle.player.money).toBe(300);
-    expect(bundle.settings.currentModel).toBe('deepseek-chat');
-    expect(bundle.embeddedMedia['event:eventA']).toEqual({
-      url: 'data:image/png;base64,abc',
-      dataUrl: 'data:image/png;base64,abc',
-      prompt: '教室窗边的两人'
-    });
-  });
-
-  it('restores a valid save bundle and rejects broken or incompatible files', () => {
-    const state = updateMemory(createInitialState(), {
-      summary: '你已经完成一次任务。',
-      facts: ['获得了新的线索']
-    });
-    const serialized = serializeGameSave({
-      schemaVersion: 1,
-      appName: 'romance-map-chat-game',
-      exportedAt: '2026-04-27T10:00:00.000Z',
-      worldSnapshot: worldData,
-      gameState: state,
-      player: {
-        ...createInitialPlayerState(),
-        money: 128
-      },
-      settings: {
-        currentModel: 'gpt-4o-mini',
-        streamCharsPerSecond: 5
-      },
-      embeddedMedia: {}
-    });
-
-    const bundle = parseGameSave(serialized);
-    const restored = restoreGameSaveBundle(bundle);
-
-    expect(restored.memory.summary).toContain('任务');
-    expect(restored.player.money).toBe(128);
-    expect(restored.settings.currentModel).toBe('gpt-4o-mini');
-    expect(() => parseGameSave('{bad json')).toThrow('存档文件不是有效的 JSON');
-    const changedWorld = parseGameSave(
-      serializeGameSave({
-        ...bundle,
-        worldSnapshot: {
-          ...worldData,
-          regions: [...worldData.regions, { id: 'toilet', name: '厕所', sceneIds: [] }]
-        }
-      })
-    );
-    expect(changedWorld.gameState.world.data.regions.map((region) => region.id)).toContain('toilet');
   });
 
   it('resets game progress while preserving player settings', () => {
@@ -142,15 +60,98 @@ describe('game save bundles', () => {
     expect(restored?.player.money).toBe(77);
   });
 
-  it('imports a save file object', async () => {
-    const state = createInitialState();
-    const bundle = await exportGameSave(state);
-    const file = new File([serializeGameSave(bundle)], 'save.json', { type: 'application/json' });
+  it('exports and imports a zip save with media files outside the JSON manifest', async () => {
+    let state = enterRegion(createInitialState(), 'school');
+    state = {
+      ...state,
+      event: {
+        ...state.event,
+        generatedImages: {
+          eventA: 'data:image/png;base64,QUJD'
+        },
+        generatedImagePrompts: {
+          eventA: '教室窗边的两人'
+        }
+      }
+    };
 
-    await expect(importGameSave(file)).resolves.toMatchObject({
-      appName: 'romance-map-chat-game',
-      schemaVersion: 1
+    const archive = await exportGameSaveZip(state, { now: new Date('2026-04-27T10:00:00.000Z') });
+    const zip = await JSZip.loadAsync(archive);
+    const manifest = await zip.file('save.json')?.async('text');
+    const file = new File([archive], 'save.zip', { type: 'application/zip' });
+    const savedMedia = new Map<string, Blob>();
+    const bundle = await importGameSave(file, {
+      saveMediaBlob: async (key, blob) => {
+        savedMedia.set(key, blob);
+      }
     });
+
+    expect(manifest).toContain('media://event:eventA');
+    expect(manifest).not.toContain('data:image/png;base64,QUJD');
+    expect(zip.file('media/event/eventA.png')).not.toBeNull();
+    expect(bundle.embeddedMedia['event:eventA']).toMatchObject({
+      mediaPath: 'media/event/eventA.png',
+      prompt: '教室窗边的两人'
+    });
+    expect(savedMedia.get('event:eventA')?.type).toBe('image/png');
+    expect(bundle.gameState.event.generatedImages.eventA).toBe('media://event:eventA');
+  });
+
+  it('can keep zip media in external storage instead of hydrating data urls during import', async () => {
+    const state = {
+      ...createInitialState(),
+      event: {
+        ...createInitialState().event,
+        generatedImages: {
+          eventA: 'data:image/png;base64,QUJD'
+        }
+      }
+    };
+    const savedMedia = new Map<string, Blob>();
+    const archive = await exportGameSaveZip(state);
+    const file = new File([archive], 'save.zip', { type: 'application/zip' });
+    const bundle = await importGameSave(file, {
+      saveMediaBlob: async (key, blob) => {
+        savedMedia.set(key, blob);
+      }
+    });
+
+    expect(savedMedia.get('event:eventA')?.type).toBe('image/png');
+    expect(bundle.gameState.event.generatedImages.eventA).toBe('media://event:eventA');
+    expect(bundle.embeddedMedia['event:eventA'].url).toBe('media://event:eventA');
+  });
+
+  it('rejects non-zip save files', async () => {
+    const file = new File(['{}'], 'save.json', { type: 'application/json' });
+
+    await expect(
+      importGameSave(file, {
+        saveMediaBlob: async () => undefined
+      })
+    ).rejects.toThrow('请导入 ZIP 格式的游戏存档');
+  });
+
+  it('exports media references by reading their blobs from external storage', async () => {
+    const state = {
+      ...createInitialState(),
+      event: {
+        ...createInitialState().event,
+        generatedImages: {
+          eventA: 'media://event:eventA'
+        },
+        generatedImagePrompts: {
+          eventA: '索引图片'
+        }
+      }
+    };
+    const archive = await exportGameSaveZip(state, {
+      loadMediaBlob: async (key) => (key === 'event:eventA' ? new Blob(['ABC'], { type: 'image/png' }) : null)
+    });
+    const zip = await JSZip.loadAsync(archive);
+    const manifest = await zip.file('save.json')?.async('text');
+
+    expect(manifest).toContain('media://event:eventA');
+    expect(zip.file('media/event/eventA.png')).not.toBeNull();
   });
 
   it('detects busy states before import, export, or reset actions', () => {

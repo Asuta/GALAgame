@@ -3,6 +3,9 @@ import { formatMinutesClockLabel } from '../state/store';
 import type { GameState } from '../state/store';
 import { formatGameEffectSummaries } from '../player/effectSummary';
 import { resolveVisualSelection } from '../visual/assetCatalog';
+import { isStoredMediaUrl } from '../save/mediaStore';
+
+const EMPTY_IMAGE_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
 
 const escapeHtml = (value: string): string =>
   value
@@ -11,6 +14,11 @@ const escapeHtml = (value: string): string =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+
+const renderImageSourceAttributes = (url: string): string =>
+  isStoredMediaUrl(url)
+    ? `src="${EMPTY_IMAGE_DATA_URL}" data-media-src="${escapeHtml(url)}"`
+    : `src="${escapeHtml(url)}"`;
 
 const renderDetailRow = (label: string, value: string): string => `
   <div class="event-detail-row">
@@ -381,7 +389,7 @@ export const createAppMarkup = (state: GameState): string => {
                           <img
                             class="visual-background"
                             data-testid="task-visual-image"
-                            src="${escapeHtml(taskImageUrl)}"
+                            ${renderImageSourceAttributes(taskImageUrl)}
                             alt="${escapeHtml(task.title)}"
                           />
                         `
@@ -574,7 +582,7 @@ export const createAppMarkup = (state: GameState): string => {
                             <img
                               class="visual-background"
                               data-testid="decision-task-visual-image"
-                              src="${escapeHtml(completedTaskImageUrl)}"
+                              ${renderImageSourceAttributes(completedTaskImageUrl)}
                               alt="${escapeHtml(completedTask?.title ?? '任务画面')}"
                             />
                           `
@@ -801,7 +809,7 @@ export const createAppMarkup = (state: GameState): string => {
                 <button class="settings-action-button decision-secondary" data-action="import-game-save">导入游戏数据</button>
                 <button class="settings-action-button settings-danger-button" data-action="reset-game-progress">重置游戏进度</button>
               </div>
-              <input data-game-save-input class="visually-hidden-file" type="file" accept="application/json,.json" />
+              <input data-game-save-input class="visually-hidden-file" type="file" accept="application/zip,.zip" />
             </div>
           </div>
           ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}
@@ -920,7 +928,7 @@ export const createAppMarkup = (state: GameState): string => {
             <img
               class="visual-background"
               data-testid="visual-background"
-              src="${escapeHtml(visualSelection.background)}"
+              ${renderImageSourceAttributes(visualSelection.background)}
               alt="${escapeHtml(visualSelection.locationLabel)}"
             />
             ${
@@ -928,7 +936,7 @@ export const createAppMarkup = (state: GameState): string => {
                 ? `<img
                     class="visual-character"
                     data-testid="visual-character"
-                    src="${escapeHtml(visualSelection.character)}"
+                    ${renderImageSourceAttributes(visualSelection.character)}
                     alt="${escapeHtml(activeEvent?.cast[0] ?? '角色肖像')}"
                   />`
                 : ''

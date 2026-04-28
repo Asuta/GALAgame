@@ -1,16 +1,19 @@
+import JSZip from 'jszip';
 import { worldData } from '../data/world';
 import { createInitialState, type GameState } from '../state/store';
 import { clampStreamCharsPerSecond, type StoredSettings } from '../settings/storage';
 import { normalizePlayerState } from '../player/storage';
 import type { PlayerState } from '../player/types';
 import type { SceneEventSeed, TimeSlot, WorldData } from '../data/types';
+import { createStoredMediaUrl, dataUrlToBlob, getStoredMediaKey, isStoredMediaUrl } from './mediaStore';
 
 export const SAVE_APP_NAME = 'romance-map-chat-game';
 export const SAVE_SCHEMA_VERSION = 1;
 
 export interface EmbeddedMediaEntry {
   url: string;
-  dataUrl?: string;
+  mediaPath?: string;
+  contentType?: string;
   prompt?: string;
   error?: string;
 }
@@ -24,6 +27,15 @@ export interface GameSaveBundle {
   player: PlayerState;
   settings: StoredSettings;
   embeddedMedia: Record<string, EmbeddedMediaEntry>;
+}
+
+export interface GameSaveMediaOptions {
+  loadMediaBlob?: (key: string) => Promise<Blob | null>;
+  saveMediaBlob?: (key: string, blob: Blob) => Promise<void>;
+}
+
+export interface ImportGameSaveOptions {
+  saveMediaBlob: (key: string, blob: Blob) => Promise<void>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -226,74 +238,140 @@ const resolveImageUrl = (url: string): string => {
   return new URL(url, window.location.origin).toString();
 };
 
-const blobToDataUrl = async (blob: Blob): Promise<string> =>
-  await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('图片转换失败。'));
-    reader.readAsDataURL(blob);
-  });
-
-const embedImage = async (
-  url: string,
-  prompt: string,
-  fetchImpl: typeof fetch
-): Promise<EmbeddedMediaEntry> => {
-  if (url.startsWith('data:image/')) {
-    return { url, dataUrl: url, prompt };
+const getImageExtension = (contentType: string, fallbackUrl = ''): string => {
+  if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+    return 'jpg';
   }
 
-  try {
-    const response = await fetchImpl(resolveImageUrl(url));
+  if (contentType.includes('webp')) {
+    return 'webp';
+  }
 
-    if (!response.ok) {
+  if (contentType.includes('gif')) {
+    return 'gif';
+  }
+
+  if (contentType.includes('svg')) {
+    return 'svg';
+  }
+
+  const extensionMatch = /\.([a-z0-9]+)(?:[?#].*)?$/i.exec(fallbackUrl);
+  if (extensionMatch && ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(extensionMatch[1].toLowerCase())) {
+    return extensionMatch[1].toLowerCase() === 'jpeg' ? 'jpg' : extensionMatch[1].toLowerCase();
+  }
+
+  return 'png';
+};
+
+const sanitizeMediaSegment = (value: string): string =>
+  value
+    .replace(/[^a-z0-9_-]/gi, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80) || 'image';
+
+const collectZipImage = async (
+  key: string,
+  url: string,
+  prompt: string,
+  fetchImpl: typeof fetch,
+  loadMediaBlob?: (key: string) => Promise<Blob | null>
+): Promise<{ entry: EmbeddedMediaEntry; blob?: Blob }> => {
+  const [kind, id = 'image'] = key.split(':');
+  const basePath = `media/${sanitizeMediaSegment(kind)}/${sanitizeMediaSegment(id)}`;
+
+  try {
+    const storedMediaKey = getStoredMediaKey(url);
+    const response = url.startsWith('data:image/') || storedMediaKey ? null : await fetchImpl(resolveImageUrl(url));
+
+    if (response && !response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
 
+    const blob = url.startsWith('data:image/')
+      ? dataUrlToBlob(url)
+      : storedMediaKey
+        ? await loadMediaBlob?.(storedMediaKey)
+        : await response!.blob();
+
+    if (!blob) {
+      throw new Error('IndexedDB 中缺少对应图片。');
+    }
+
+    const contentType = blob.type || 'image/png';
+    const mediaPath = `${basePath}.${getImageExtension(contentType, url)}`;
+
     return {
-      url,
-      dataUrl: await blobToDataUrl(await response.blob()),
-      prompt
+      blob,
+      entry: {
+        url: url.startsWith('data:image/') || isStoredMediaUrl(url) ? createStoredMediaUrl(key) : url,
+        mediaPath,
+        contentType,
+        prompt
+      }
     };
   } catch (error) {
     return {
-      url,
-      prompt,
-      error: error instanceof Error ? error.message : '图片读取失败。'
+      entry: {
+        url,
+        prompt,
+        error: error instanceof Error ? error.message : '图片读取失败。'
+      }
     };
   }
 };
 
-export const exportGameSave = async (
+const serializeSaveManifest = (bundle: GameSaveBundle): string => JSON.stringify(bundle, null, 2);
+
+export const exportGameSaveZip = async (
   state: GameState,
-  options: { fetchImpl?: typeof fetch; now?: Date } = {}
-): Promise<GameSaveBundle> => {
+  options: { fetchImpl?: typeof fetch; now?: Date } & Pick<GameSaveMediaOptions, 'loadMediaBlob'> = {}
+): Promise<Blob> => {
   const fetchImpl = options.fetchImpl ?? fetch;
   const exportedState = cloneJson(sanitizeGameState(state));
   const embeddedMedia: Record<string, EmbeddedMediaEntry> = {};
+  const zip = new JSZip();
 
   await Promise.all(
     Object.entries(exportedState.event.generatedImages).map(async ([eventId, imageUrl]) => {
-      const entry = await embedImage(imageUrl, exportedState.event.generatedImagePrompts[eventId] ?? '', fetchImpl);
-      embeddedMedia[`event:${eventId}`] = entry;
+      const key = `event:${eventId}`;
+      const result = await collectZipImage(
+        key,
+        imageUrl,
+        exportedState.event.generatedImagePrompts[eventId] ?? '',
+        fetchImpl,
+        options.loadMediaBlob
+      );
 
-      if (entry.dataUrl) {
-        exportedState.event.generatedImages[eventId] = entry.dataUrl;
+      embeddedMedia[key] = result.entry;
+
+      if (result.entry.mediaPath && result.blob) {
+        zip.file(result.entry.mediaPath, result.blob);
+        exportedState.event.generatedImages[eventId] = `media://${key}`;
       }
     })
   );
 
   const activeTask = exportedState.task.activeTask;
   if (activeTask?.generatedImageUrl) {
-    const entry = await embedImage(activeTask.generatedImageUrl, activeTask.generatedImagePrompt, fetchImpl);
-    embeddedMedia[`task:${activeTask.id}`] = entry;
+    const key = `task:${activeTask.id}`;
+    const result = await collectZipImage(
+      key,
+      activeTask.generatedImageUrl,
+      activeTask.generatedImagePrompt,
+      fetchImpl,
+      options.loadMediaBlob
+    );
 
-    if (entry.dataUrl) {
-      activeTask.generatedImageUrl = entry.dataUrl;
+    embeddedMedia[key] = result.entry;
+
+    if (result.entry.mediaPath && result.blob) {
+      zip.file(result.entry.mediaPath, result.blob);
+      activeTask.generatedImageUrl = `media://${key}`;
     }
   }
 
-  return {
+  const bundle: GameSaveBundle = {
     schemaVersion: SAVE_SCHEMA_VERSION,
     appName: SAVE_APP_NAME,
     exportedAt: (options.now ?? new Date()).toISOString(),
@@ -306,17 +384,19 @@ export const exportGameSave = async (
     },
     embeddedMedia
   };
+
+  zip.file('save.json', serializeSaveManifest(bundle));
+
+  return await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
 };
 
-export const serializeGameSave = (bundle: GameSaveBundle): string => JSON.stringify(bundle, null, 2);
-
-export const parseGameSave = (text: string): GameSaveBundle => {
+const parseSaveManifest = (text: string): GameSaveBundle => {
   let parsed: unknown;
 
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error('存档文件不是有效的 JSON。');
+    throw new Error('ZIP 存档清单不是有效的 JSON。');
   }
 
   if (!isRecord(parsed)) {
@@ -341,15 +421,61 @@ export const parseGameSave = (text: string): GameSaveBundle => {
   };
 };
 
-const readFileAsText = async (file: File): Promise<string> =>
-  await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('存档文件读取失败。'));
-    reader.readAsText(file);
-  });
+const isZipFile = (file: File): boolean =>
+  file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
 
-export const importGameSave = async (file: File): Promise<GameSaveBundle> => parseGameSave(await readFileAsText(file));
+export const importGameSave = async (file: File, options: ImportGameSaveOptions): Promise<GameSaveBundle> => {
+  if (!isZipFile(file)) {
+    throw new Error('请导入 ZIP 格式的游戏存档。');
+  }
+
+  const zip = await JSZip.loadAsync(file);
+  const manifest = zip.file('save.json');
+
+  if (!manifest) {
+    throw new Error('ZIP 存档缺少 save.json。');
+  }
+
+  const bundle = parseSaveManifest(await manifest.async('text'));
+
+  await Promise.all(
+    Object.entries(bundle.embeddedMedia).map(async ([key, entry]) => {
+      if (!entry.mediaPath) {
+        return;
+      }
+
+      const mediaFile = zip.file(entry.mediaPath);
+      if (!mediaFile) {
+        bundle.embeddedMedia[key] = {
+          ...entry,
+          error: 'ZIP 存档缺少对应图片文件。'
+        };
+        return;
+      }
+
+      const bytes = await mediaFile.async('arraybuffer');
+      const blob = new Blob([bytes], { type: entry.contentType || 'application/octet-stream' });
+
+      await options.saveMediaBlob(key, blob);
+      bundle.embeddedMedia[key] = {
+        ...entry,
+        url: createStoredMediaUrl(key)
+      };
+
+      if (key.startsWith('event:')) {
+        const eventId = key.slice('event:'.length);
+        bundle.gameState.event.generatedImages[eventId] = createStoredMediaUrl(key);
+        return;
+      }
+
+      if (key.startsWith('task:') && bundle.gameState.task.activeTask?.id === key.slice('task:'.length)) {
+        bundle.gameState.task.activeTask.generatedImageUrl = createStoredMediaUrl(key);
+      }
+    })
+  );
+
+  return bundle;
+};
 
 export const restoreGameSaveBundle = (bundle: GameSaveBundle): GameState =>
   normalizeImportedGameState(bundle.gameState, bundle.player, bundle.settings, bundle.worldSnapshot);

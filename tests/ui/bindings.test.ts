@@ -57,7 +57,7 @@ import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
 import { bindUi } from '../../src/ui/bindings';
 import { appendTranscriptMessage, createInitialState, startEvent, updateMemory } from '../../src/state/store';
-import { exportGameSave, serializeGameSave } from '../../src/save/gameSave';
+import { exportGameSaveZip } from '../../src/save/gameSave';
 import { loadStoredGameState } from '../../src/save/storage';
 
 let historyScrollTopStore = new WeakMap<HTMLElement, number>();
@@ -423,8 +423,8 @@ describe('bindUi scene switching', () => {
         facts: ['导入恢复了记忆']
       }
     );
-    const bundle = await exportGameSave(importedState);
-    const file = new File([serializeGameSave(bundle)], 'save.json', { type: 'application/json' });
+    const archive = await exportGameSaveZip(importedState);
+    const file = new File([archive], 'save.zip', { type: 'application/zip' });
 
     bindUi(document.querySelector('#app') as HTMLDivElement);
     (document.querySelector('[data-action="open-settings"]') as HTMLButtonElement).click();

@@ -10,6 +10,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "phaser": "^3.90.0"
   },
   "devDependencies": {

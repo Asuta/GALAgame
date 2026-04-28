@@ -20,14 +20,21 @@ import { formatGameEffectsInline } from '../player/effectSummary';
 import { serializePlayerStateForPrompt } from '../player/serializeForPrompt';
 import { loadStoredPlayerState, saveStoredPlayerState } from '../player/storage';
 import {
-  exportGameSave,
+  exportGameSaveZip,
   importGameSave,
   isGameStateBusy,
   resetGameProgress,
-  restoreGameSaveBundle,
-  serializeGameSave
+  restoreGameSaveBundle
 } from '../save/gameSave';
 import { saveStoredGameState } from '../save/storage';
+import {
+  clearMediaStore,
+  createStoredMediaUrl,
+  dataUrlToBlob,
+  getStoredMediaKey,
+  loadMediaBlob,
+  saveMediaBlob
+} from '../save/mediaStore';
 import type { GameEffect } from '../player/types';
 import {
   appendActiveEventFacts,
@@ -184,6 +191,7 @@ const formatTaskTimeLabel = (minutes: number): string => {
 
 export const bindUi = (root: HTMLDivElement, initialState = createInitialState()): void => {
   let state: GameState = applyStoredPlayerState(applyStoredSettings(initialState));
+  const mediaObjectUrlCache = new Map<string, string>();
   let shouldAutoScrollHistory = true;
   let preservedHistoryScrollTop = 0;
   let streamRevealBoostCharacters = 0;
@@ -198,6 +206,47 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     state = setPlayerState(state, applyGameEffects(state.player, effects));
     state = recordSettlementEffects(state, summary, effects);
     persistPlayerState(state);
+  };
+
+  const resolveRenderedMedia = async (): Promise<void> => {
+    const images = Array.from(root.querySelectorAll<HTMLImageElement>('img[data-media-src]'));
+
+    await Promise.all(
+      images.map(async (image) => {
+        const mediaUrl = image.dataset.mediaSrc ?? '';
+        const key = getStoredMediaKey(mediaUrl);
+
+        if (!key) {
+          return;
+        }
+
+        let objectUrl = mediaObjectUrlCache.get(key);
+
+        if (!objectUrl) {
+          const blob = await loadMediaBlob(key).catch(() => null);
+
+          if (!blob) {
+            return;
+          }
+
+          objectUrl = URL.createObjectURL(blob);
+          mediaObjectUrlCache.set(key, objectUrl);
+        }
+
+        if (image.dataset.mediaSrc === mediaUrl) {
+          image.src = objectUrl;
+        }
+      })
+    );
+  };
+
+  const persistGeneratedMediaReference = async (key: string, imageUrl: string): Promise<string> => {
+    if (!imageUrl.startsWith('data:image/')) {
+      return imageUrl;
+    }
+
+    await saveMediaBlob(key, dataUrlToBlob(imageUrl));
+    return createStoredMediaUrl(key);
   };
 
   const updateHistoryScrollPreference = (history: HTMLElement): void => {
@@ -262,6 +311,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     }
 
     renderApp(root, state);
+    void resolveRenderedMedia();
     const history = root.querySelector<HTMLElement>('[data-chat-history]');
     if (history) {
       applyHistoryScrollPosition(history);
@@ -536,7 +586,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       });
 
       if (state.task.activeTask?.id === taskId) {
-        state = finishTaskImageGeneration(state, imageUrl, imagePrompt);
+        const storedImageUrl = await persistGeneratedMediaReference(`task:${taskId}`, imageUrl);
+        state = finishTaskImageGeneration(state, storedImageUrl, imagePrompt);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
@@ -819,7 +870,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         memoryFacts: state.memory.facts,
         referenceImageUrls
       });
-      state = finishEventImageGeneration(state, eventForImage.id, imageUrl, imagePrompt);
+      const storedImageUrl = await persistGeneratedMediaReference(`event:${eventForImage.id}`, imageUrl);
+      state = finishEventImageGeneration(state, eventForImage.id, storedImageUrl, imagePrompt);
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
       state = failEventImageGeneration(state, eventForImage.id, message);
@@ -828,8 +880,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     rerender();
   };
 
-  const downloadTextFile = (filename: string, content: string): void => {
-    const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+  const downloadBlobFile = (filename: string, blob: Blob): void => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
 
@@ -848,9 +899,9 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     }
 
     try {
-      const bundle = await exportGameSave(state);
+      const archive = await exportGameSaveZip(state, { loadMediaBlob });
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      downloadTextFile(`gala-game-save-${timestamp}.json`, serializeGameSave(bundle));
+      downloadBlobFile(`gala-game-save-${timestamp}.zip`, archive);
       window.alert('游戏数据已导出。');
     } catch (error) {
       window.alert(error instanceof Error ? error.message : '导出游戏数据失败。');
@@ -868,7 +919,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     }
 
     try {
-      const bundle = await importGameSave(file);
+      const bundle = await importGameSave(file, { saveMediaBlob });
       state = restoreGameSaveBundle(bundle);
       persistSettings(state);
       persistPlayerState(state);
@@ -891,6 +942,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     }
 
     state = resetGameProgress(state.settings);
+    void clearMediaStore().catch(() => undefined);
     persistSettings(state);
     persistPlayerState(state);
     persistGameState(state);
