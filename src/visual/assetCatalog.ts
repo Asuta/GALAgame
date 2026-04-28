@@ -36,6 +36,11 @@ const CHARACTER_PORTRAITS = {
 } as const;
 type VisualCharacterId = keyof typeof CHARACTER_PORTRAITS;
 
+const CHARACTER_ASSET_KEYS: Record<VisualCharacterId, string> = {
+  林澄: 'lin-cheng',
+  周然: 'zhou-ran'
+};
+
 export interface VisualSelection {
   mode: 'map' | 'region' | 'event';
   background: string;
@@ -45,6 +50,34 @@ export interface VisualSelection {
 }
 
 const CITY_MAP_BACKGROUND = '/assets/map/city-overview-main.png';
+
+export interface ExportableVisualAsset {
+  key: string;
+  url: string;
+}
+
+export const getExportableVisualAssets = (): ExportableVisualAsset[] => [
+  {
+    key: 'asset:map:city-overview',
+    url: CITY_MAP_BACKGROUND
+  },
+  ...Object.entries(REGION_BACKGROUNDS).map(([regionId, url]) => ({
+    key: `asset:region:${regionId}`,
+    url
+  })),
+  ...Object.entries(SCENE_BACKGROUNDS).map(([sceneId, url]) => ({
+    key: `asset:scene:${sceneId}`,
+    url
+  })),
+  ...Object.entries(CHARACTER_PORTRAITS).map(([characterId, url]) => ({
+    key: `asset:character:${CHARACTER_ASSET_KEYS[characterId as VisualCharacterId]}`,
+    url
+  }))
+];
+
+const STATIC_ASSET_MEDIA_URLS = new Map(getExportableVisualAssets().map((asset) => [asset.url, `media://${asset.key}`]));
+
+export const resolveStaticAssetMediaUrl = (url: string): string | null => STATIC_ASSET_MEDIA_URLS.get(url) ?? null;
 
 const isVisualRegionId = (value: string): value is VisualRegionId =>
   value in REGION_BACKGROUNDS;

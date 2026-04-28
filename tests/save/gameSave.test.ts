@@ -6,10 +6,17 @@ import {
   exportGameSaveZip,
   importGameSave,
   isGameStateBusy,
-  resetGameProgress,
-  restoreGameSaveBundle
+  resetGameProgress
 } from '../../src/save/gameSave';
 import { loadStoredGameState, saveStoredGameState } from '../../src/save/storage';
+
+const imageFetch = async (): Promise<Response> =>
+  new Response(new Blob(['asset'], { type: 'image/png' }), {
+    status: 200,
+    headers: {
+      'content-type': 'image/png'
+    }
+  });
 
 describe('game save bundles', () => {
   beforeEach(() => {
@@ -60,7 +67,7 @@ describe('game save bundles', () => {
     expect(restored?.player.money).toBe(77);
   });
 
-  it('exports and imports a zip save with media files outside the JSON manifest', async () => {
+  it('exports default visual assets and omits temporary generated images', async () => {
     let state = enterRegion(createInitialState(), 'school');
     state = {
       ...state,
@@ -75,7 +82,7 @@ describe('game save bundles', () => {
       }
     };
 
-    const archive = await exportGameSaveZip(state, { now: new Date('2026-04-27T10:00:00.000Z') });
+    const archive = await exportGameSaveZip(state, { now: new Date('2026-04-27T10:00:00.000Z'), fetchImpl: imageFetch });
     const zip = await JSZip.loadAsync(archive);
     const manifest = await zip.file('save.json')?.async('text');
     const file = new File([archive], 'save.zip', { type: 'application/zip' });
@@ -86,18 +93,20 @@ describe('game save bundles', () => {
       }
     });
 
-    expect(manifest).toContain('media://event:eventA');
+    expect(manifest).toContain('asset:map:city-overview');
+    expect(manifest).toContain('asset:scene:classroom');
+    expect(manifest).toContain('asset:character:lin-cheng');
     expect(manifest).not.toContain('data:image/png;base64,QUJD');
-    expect(zip.file('media/event/eventA.png')).not.toBeNull();
-    expect(bundle.embeddedMedia['event:eventA']).toMatchObject({
-      mediaPath: 'media/event/eventA.png',
-      prompt: '教室窗边的两人'
-    });
-    expect(savedMedia.get('event:eventA')?.type).toBe('image/png');
-    expect(bundle.gameState.event.generatedImages.eventA).toBe('media://event:eventA');
+    expect(manifest).not.toContain('eventA');
+    expect(zip.file('media/asset/map/city-overview.png')).not.toBeNull();
+    expect(zip.file('media/asset/scene/classroom.png')).not.toBeNull();
+    expect(zip.file('media/asset/character/lin-cheng.png')).not.toBeNull();
+    expect(zip.file('media/event/eventA.png')).toBeNull();
+    expect(savedMedia.get('asset:scene:classroom')?.type).toBe('image/png');
+    expect(bundle.gameState.event.generatedImages.eventA).toBeUndefined();
   });
 
-  it('can keep zip media in external storage instead of hydrating data urls during import', async () => {
+  it('keeps zip media in external storage instead of hydrating data urls during import', async () => {
     const state = {
       ...createInitialState(),
       event: {
@@ -108,7 +117,7 @@ describe('game save bundles', () => {
       }
     };
     const savedMedia = new Map<string, Blob>();
-    const archive = await exportGameSaveZip(state);
+    const archive = await exportGameSaveZip(state, { fetchImpl: imageFetch });
     const file = new File([archive], 'save.zip', { type: 'application/zip' });
     const bundle = await importGameSave(file, {
       saveMediaBlob: async (key, blob) => {
@@ -116,9 +125,9 @@ describe('game save bundles', () => {
       }
     });
 
-    expect(savedMedia.get('event:eventA')?.type).toBe('image/png');
-    expect(bundle.gameState.event.generatedImages.eventA).toBe('media://event:eventA');
-    expect(bundle.embeddedMedia['event:eventA'].url).toBe('media://event:eventA');
+    expect(savedMedia.get('asset:map:city-overview')?.type).toBe('image/png');
+    expect(bundle.gameState.event.generatedImages.eventA).toBeUndefined();
+    expect(bundle.embeddedMedia['asset:map:city-overview'].url).toBe('media://asset:map:city-overview');
   });
 
   it('rejects non-zip save files', async () => {
@@ -131,7 +140,7 @@ describe('game save bundles', () => {
     ).rejects.toThrow('请导入 ZIP 格式的游戏存档');
   });
 
-  it('exports media references by reading their blobs from external storage', async () => {
+  it('does not export generated media references from external storage', async () => {
     const state = {
       ...createInitialState(),
       event: {
@@ -145,13 +154,15 @@ describe('game save bundles', () => {
       }
     };
     const archive = await exportGameSaveZip(state, {
+      fetchImpl: imageFetch,
       loadMediaBlob: async (key) => (key === 'event:eventA' ? new Blob(['ABC'], { type: 'image/png' }) : null)
     });
     const zip = await JSZip.loadAsync(archive);
     const manifest = await zip.file('save.json')?.async('text');
 
-    expect(manifest).toContain('media://event:eventA');
-    expect(zip.file('media/event/eventA.png')).not.toBeNull();
+    expect(manifest).not.toContain('media://event:eventA');
+    expect(zip.file('media/event/eventA.png')).toBeNull();
+    expect(zip.file('media/asset/map/city-overview.png')).not.toBeNull();
   });
 
   it('detects busy states before import, export, or reset actions', () => {

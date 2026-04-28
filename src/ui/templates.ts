@@ -2,7 +2,7 @@ import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEven
 import { formatMinutesClockLabel } from '../state/store';
 import type { GameState } from '../state/store';
 import { formatGameEffectSummaries } from '../player/effectSummary';
-import { resolveVisualSelection } from '../visual/assetCatalog';
+import { resolveStaticAssetMediaUrl, resolveVisualSelection } from '../visual/assetCatalog';
 import { isStoredMediaUrl } from '../save/mediaStore';
 
 const EMPTY_IMAGE_DATA_URL = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
@@ -18,7 +18,9 @@ const escapeHtml = (value: string): string =>
 const renderImageSourceAttributes = (url: string): string =>
   isStoredMediaUrl(url)
     ? `src="${EMPTY_IMAGE_DATA_URL}" data-media-src="${escapeHtml(url)}"`
-    : `src="${escapeHtml(url)}"`;
+    : resolveStaticAssetMediaUrl(url)
+      ? `src="${escapeHtml(url)}" data-media-src="${escapeHtml(resolveStaticAssetMediaUrl(url) ?? '')}"`
+      : `src="${escapeHtml(url)}"`;
 
 const renderDetailRow = (label: string, value: string): string => `
   <div class="event-detail-row">

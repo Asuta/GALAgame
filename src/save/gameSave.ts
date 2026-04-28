@@ -6,6 +6,7 @@ import { normalizePlayerState } from '../player/storage';
 import type { PlayerState } from '../player/types';
 import type { SceneEventSeed, TimeSlot, WorldData } from '../data/types';
 import { createStoredMediaUrl, dataUrlToBlob, getStoredMediaKey, isStoredMediaUrl } from './mediaStore';
+import { getExportableVisualAssets } from '../visual/assetCatalog';
 
 export const SAVE_APP_NAME = 'romance-map-chat-game';
 export const SAVE_SCHEMA_VERSION = 1;
@@ -164,6 +165,25 @@ const sanitizeGameState = (state: GameState): GameState => ({
   }
 });
 
+const stripTemporaryGeneratedImages = (state: GameState): GameState => ({
+  ...state,
+  event: {
+    ...state.event,
+    generatedImages: {},
+    generatedImagePrompts: {}
+  },
+  task: {
+    ...state.task,
+    activeTask: state.task.activeTask
+      ? {
+          ...state.task.activeTask,
+          generatedImageUrl: null,
+          generatedImagePrompt: ''
+        }
+      : null
+  }
+});
+
 export const isGameStateBusy = (state: GameState): boolean =>
   state.ui.isSending ||
   state.ui.generatingSceneIds.length > 0 ||
@@ -277,8 +297,10 @@ const collectZipImage = async (
   fetchImpl: typeof fetch,
   loadMediaBlob?: (key: string) => Promise<Blob | null>
 ): Promise<{ entry: EmbeddedMediaEntry; blob?: Blob }> => {
-  const [kind, id = 'image'] = key.split(':');
-  const basePath = `media/${sanitizeMediaSegment(kind)}/${sanitizeMediaSegment(id)}`;
+  const pathSegments = key.split(':').map(sanitizeMediaSegment);
+  const filename = pathSegments[pathSegments.length - 1] ?? 'image';
+  const folder = pathSegments.slice(0, -1).join('/') || 'media';
+  const basePath = `media/${folder}/${filename}`;
 
   try {
     const storedMediaKey = getStoredMediaKey(url);
@@ -328,48 +350,27 @@ export const exportGameSaveZip = async (
   options: { fetchImpl?: typeof fetch; now?: Date } & Pick<GameSaveMediaOptions, 'loadMediaBlob'> = {}
 ): Promise<Blob> => {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const exportedState = cloneJson(sanitizeGameState(state));
+  const exportedState = cloneJson(stripTemporaryGeneratedImages(sanitizeGameState(state)));
   const embeddedMedia: Record<string, EmbeddedMediaEntry> = {};
   const zip = new JSZip();
 
   await Promise.all(
-    Object.entries(exportedState.event.generatedImages).map(async ([eventId, imageUrl]) => {
-      const key = `event:${eventId}`;
+    getExportableVisualAssets().map(async (asset) => {
       const result = await collectZipImage(
-        key,
-        imageUrl,
-        exportedState.event.generatedImagePrompts[eventId] ?? '',
+        asset.key,
+        asset.url,
+        '',
         fetchImpl,
         options.loadMediaBlob
       );
 
-      embeddedMedia[key] = result.entry;
+      embeddedMedia[asset.key] = result.entry;
 
       if (result.entry.mediaPath && result.blob) {
         zip.file(result.entry.mediaPath, result.blob);
-        exportedState.event.generatedImages[eventId] = `media://${key}`;
       }
     })
   );
-
-  const activeTask = exportedState.task.activeTask;
-  if (activeTask?.generatedImageUrl) {
-    const key = `task:${activeTask.id}`;
-    const result = await collectZipImage(
-      key,
-      activeTask.generatedImageUrl,
-      activeTask.generatedImagePrompt,
-      fetchImpl,
-      options.loadMediaBlob
-    );
-
-    embeddedMedia[key] = result.entry;
-
-    if (result.entry.mediaPath && result.blob) {
-      zip.file(result.entry.mediaPath, result.blob);
-      activeTask.generatedImageUrl = `media://${key}`;
-    }
-  }
 
   const bundle: GameSaveBundle = {
     schemaVersion: SAVE_SCHEMA_VERSION,
