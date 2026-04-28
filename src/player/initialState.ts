@@ -1,22 +1,14 @@
 import type { PlayerState } from './types';
+import { DEFAULT_ACADEMICS, DEFAULT_ATTRIBUTES, createStatGroupsFromLegacy } from './stats';
 
 export const createInitialPlayerState = (): PlayerState => ({
-  attributes: {
-    intelligence: 10,
-    stamina: 10,
-    agility: 10,
-    insight: 10,
-    hp: 100
-  },
-  academics: {
-    math: 60,
-    literature: 60,
-    english: 60,
-    physics: 60
-  },
+  statGroups: createStatGroupsFromLegacy(),
+  attributes: { ...DEFAULT_ATTRIBUTES },
+  academics: { ...DEFAULT_ACADEMICS },
   money: 100,
   inventory: {
-    items: []
+    items: [],
+    optionDefinitions: []
   }
 });
 

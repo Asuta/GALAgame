@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
-import { createInitialState, enterRegion, openTaskPlanningPage, startTask, updateMemory } from '../../src/state/store';
+import {
+  createInitialState,
+  enterRegion,
+  openTaskPlanningPage,
+  startTask,
+  updateMemory,
+  upsertCharacter,
+  upsertPlayerStat,
+  upsertRegion,
+  upsertScene
+} from '../../src/state/store';
 import { createInitialPlayerState } from '../../src/player/initialState';
 import {
   exportGameSaveZip,
@@ -45,6 +55,44 @@ describe('game save bundles', () => {
     expect(reset.player.money).toBe(createInitialPlayerState().money);
     expect(reset.settings.currentModel).toBe('gpt-4o-mini');
     expect(reset.settings.streamCharsPerSecond).toBe(6);
+  });
+
+  it('resets runtime data mutations back to the original baseline', () => {
+    let state = createInitialState();
+    state = upsertRegion(state, { id: 'gym', name: '体育馆', sceneIds: [] });
+    state = upsertPlayerStat(state, 'social', {
+      id: 'empathy',
+      label: '共情',
+      value: 5,
+      groupLabel: '社交能力'
+    });
+    state = {
+      ...state,
+      player: {
+        ...state.player,
+        money: 999,
+        inventory: {
+          ...state.player.inventory,
+          items: [
+            {
+              id: 'ticket',
+              name: '电影票',
+              description: '临时获得的票。',
+              abilityText: '可以进入电影院。',
+              effects: [],
+              quantity: 1
+            }
+          ]
+        }
+      }
+    };
+
+    const reset = resetGameProgress(state.settings);
+
+    expect(reset.world.data.regions.map((region) => region.id)).toEqual(['school', 'hospital', 'mall', 'home']);
+    expect(reset.player.statGroups.some((group) => group.id === 'social')).toBe(false);
+    expect(reset.player.inventory.items).toEqual([]);
+    expect(reset.player.money).toBe(createInitialPlayerState().money);
   });
 
   it('persists and reloads the current game state from localStorage', () => {
@@ -104,6 +152,70 @@ describe('game save bundles', () => {
     expect(zip.file('media/event/eventA.png')).toBeNull();
     expect(savedMedia.get('asset:scene:classroom')?.type).toBe('image/png');
     expect(bundle.gameState.event.generatedImages.eventA).toBeUndefined();
+  });
+
+  it('exports runtime visual assets from the current world snapshot', async () => {
+    let state = createInitialState();
+    state = upsertRegion(state, {
+      id: 'gym',
+      name: '体育馆',
+      sceneIds: [],
+      imageUrl: '/assets/backgrounds/region-school-main.png'
+    });
+    state = upsertScene(state, {
+      id: 'gym-court',
+      regionId: 'gym',
+      name: '篮球馆',
+      description: '木地板上还留着训练后的回声。',
+      imageUrl: '/assets/backgrounds/scene-playground-main.png',
+      eventSeed: {
+        baseTitle: '训练后的体育馆',
+        castIds: ['许夏'],
+        tones: [],
+        buildUpGoals: ['观察场馆'],
+        triggerHints: ['灯光闪了一下'],
+        resolutionDirections: ['暂时离开'],
+        premiseTemplates: ['体育馆里很安静。'],
+        suspenseSeeds: []
+      }
+    });
+    state = upsertCharacter(state, {
+      id: '许夏',
+      name: '许夏',
+      gender: '女',
+      identity: '体育馆里新出现的角色',
+      age: '17岁左右',
+      personality: '直接、爽朗',
+      speakingStyle: '短句',
+      relationshipToPlayer: '刚认识',
+      hardRules: [],
+      imageUrl: '/assets/characters/lin-cheng-half-body.png'
+    });
+
+    const archive = await exportGameSaveZip(state, { fetchImpl: imageFetch });
+    const zip = await JSZip.loadAsync(archive);
+    const manifest = await zip.file('save.json')?.async('text');
+    const savedMedia = new Map<string, Blob>();
+    const bundle = await importGameSave(new File([archive], 'save.zip', { type: 'application/zip' }), {
+      saveMediaBlob: async (key, blob) => {
+        savedMedia.set(key, blob);
+      }
+    });
+
+    expect(manifest).toContain('asset:region:gym');
+    expect(manifest).toContain('asset:scene:gym-court');
+    expect(manifest).toContain('asset:character:许夏');
+    expect(zip.file('media/asset/region/gym.png')).not.toBeNull();
+    expect(zip.file('media/asset/scene/gym-court.png')).not.toBeNull();
+    expect(zip.file('media/asset/character/许夏.png')).not.toBeNull();
+    expect(savedMedia.get('asset:scene:gym-court')?.type).toBe('image/png');
+    expect(bundle.gameState.world.data.regions.find((region) => region.id === 'gym')?.imageUrl).toBe('media://asset:region:gym');
+    expect(bundle.gameState.world.data.scenes.find((scene) => scene.id === 'gym-court')?.imageUrl).toBe(
+      'media://asset:scene:gym-court'
+    );
+    expect(bundle.gameState.world.data.characters.find((character) => character.id === '许夏')?.imageUrl).toBe(
+      'media://asset:character:许夏'
+    );
   });
 
   it('keeps zip media in external storage instead of hydrating data urls during import', async () => {

@@ -60,6 +60,35 @@ describe('player state helpers', () => {
     expect(loadStoredPlayerState().money).toBe(500);
   });
 
+  it('applies dynamic stat deltas to existing and newly created stat groups', () => {
+    const nextPlayer = applyGameEffects(createInitialPlayerState(), [
+      {
+        type: 'stat_delta',
+        groupId: 'social',
+        groupLabel: '社交能力',
+        statId: 'empathy',
+        label: '共情',
+        delta: 4
+      },
+      {
+        type: 'stat_delta',
+        groupId: 'core',
+        statId: 'stamina',
+        label: '体力',
+        delta: -2
+      }
+    ]);
+
+    expect(nextPlayer.statGroups.find((group) => group.id === 'social')?.stats[0]).toMatchObject({
+      id: 'empathy',
+      label: '共情',
+      value: 4
+    });
+    expect(nextPlayer.statGroups.find((group) => group.id === 'core')?.stats.find((stat) => stat.id === 'stamina')?.value).toBe(8);
+    expect(nextPlayer.attributes.stamina).toBe(8);
+  });
+
+
   it('treats cash-like item additions as money instead of inventory items', () => {
     const nextPlayer = applyGameEffects(createInitialPlayerState(), [
       {

@@ -1,10 +1,13 @@
-import { worldData } from '../data/world';
+import { createInitialWorldData } from '../data/world';
 import { createInitialPlayerState } from '../player/initialState';
-import type { GameEffect, PlayerState } from '../player/types';
+import { syncLegacyStats, upsertStatInGroups } from '../player/stats';
+import type { GameEffect, PlayerState, PlayerStat, PlayerStatGroup } from '../player/types';
 import type {
+  CharacterProfile,
   EventPhase,
   GeneratedEvent,
   Mode,
+  Region,
   Scene,
   SceneEventSeed,
   TaskControlMode,
@@ -217,7 +220,7 @@ export const createInitialState = (): GameState => ({
     label: formatClockLabel(18, 0)
   },
   world: {
-    data: worldData,
+    data: createInitialWorldData(),
     revision: 0,
     lastEventSummary: '世界还很安静，今天的故事刚准备开始。'
   },
@@ -392,6 +395,303 @@ export const recordWorldAdvance = (state: GameState, reason: string): GameState 
     revision: state.world.revision + 1,
     lastEventSummary: reason
   }
+});
+
+const markSceneCacheStale = (
+  cache: Record<string, GeneratedEvent>,
+  sceneIds: string[] | null = null
+): Record<string, GeneratedEvent> =>
+  Object.fromEntries(
+    Object.entries(cache).map(([sceneId, event]) => [
+      sceneId,
+      !sceneIds || sceneIds.includes(sceneId)
+        ? {
+            ...event,
+            status: event.status === 'resolved' ? event.status : 'stale'
+          }
+        : event
+    ])
+  );
+
+const pruneSceneCache = (cache: Record<string, GeneratedEvent>, sceneIds: string[]): Record<string, GeneratedEvent> =>
+  Object.fromEntries(Object.entries(cache).filter(([sceneId]) => !sceneIds.includes(sceneId)));
+
+export const upsertRegion = (state: GameState, region: Region): GameState => {
+  const id = region.id.trim();
+  const name = region.name.trim();
+
+  if (!id || !name) {
+    return state;
+  }
+
+  const existing = state.world.data.regions.find((item) => item.id === id);
+  const nextRegion: Region = {
+    ...existing,
+    ...region,
+    id,
+    name,
+    sceneIds: Array.from(new Set(region.sceneIds ?? existing?.sceneIds ?? []))
+  };
+  const regions = existing
+    ? state.world.data.regions.map((item) => (item.id === id ? nextRegion : item))
+    : [...state.world.data.regions, nextRegion];
+
+  return {
+    ...state,
+    world: {
+      data: {
+        ...state.world.data,
+        regions
+      },
+      revision: state.world.revision + 1,
+      lastEventSummary: `世界结构已更新：${nextRegion.name}`
+    },
+    event: {
+      ...state.event,
+      sceneEventCache: markSceneCacheStale(state.event.sceneEventCache)
+    }
+  };
+};
+
+export const upsertScene = (state: GameState, scene: Scene): GameState => {
+  const id = scene.id.trim();
+  const regionId = scene.regionId.trim();
+  const name = scene.name.trim();
+
+  if (!id || !regionId || !name) {
+    return state;
+  }
+
+  const existingScene = state.world.data.scenes.find((item) => item.id === id);
+  const scenes = existingScene
+    ? state.world.data.scenes.map((item) => (item.id === id ? { ...existingScene, ...scene, id, regionId, name } : item))
+    : [...state.world.data.scenes, { ...scene, id, regionId, name }];
+  const regions = state.world.data.regions.map((region) =>
+    region.id === regionId
+      ? {
+          ...region,
+          sceneIds: Array.from(new Set([...region.sceneIds, id]))
+        }
+      : existingScene?.regionId === region.id
+        ? {
+            ...region,
+            sceneIds: region.sceneIds.filter((sceneId) => sceneId !== id)
+          }
+        : region
+  );
+
+  return {
+    ...state,
+    navigation:
+      existingScene && existingScene.regionId !== regionId && state.navigation.currentSceneId === id
+        ? {
+            currentRegionId: regionId,
+            currentSceneId: id
+          }
+        : state.navigation,
+    world: {
+      data: {
+        ...state.world.data,
+        regions,
+        scenes
+      },
+      revision: state.world.revision + 1,
+      lastEventSummary: `场景结构已更新：${name}`
+    },
+    event: {
+      ...state.event,
+      sceneEventCache: markSceneCacheStale(state.event.sceneEventCache, [id])
+    },
+    ui: {
+      ...state.ui,
+      sceneGenerationErrors: Object.fromEntries(
+        Object.entries(state.ui.sceneGenerationErrors).filter(([sceneId]) => sceneId !== id)
+      )
+    }
+  };
+};
+
+export const removeScene = (state: GameState, sceneId: string): GameState => {
+  const existingScene = state.world.data.scenes.find((item) => item.id === sceneId);
+
+  if (!existingScene) {
+    return state;
+  }
+
+  const nextNavigation =
+    state.navigation.currentSceneId === sceneId
+      ? {
+          currentRegionId: existingScene.regionId,
+          currentSceneId: null
+        }
+      : state.navigation;
+
+  return {
+    ...state,
+    navigation: nextNavigation,
+    world: {
+      data: {
+        ...state.world.data,
+        regions: state.world.data.regions.map((region) => ({
+          ...region,
+          sceneIds: region.sceneIds.filter((id) => id !== sceneId)
+        })),
+        scenes: state.world.data.scenes.filter((scene) => scene.id !== sceneId)
+      },
+      revision: state.world.revision + 1,
+      lastEventSummary: `场景已移除：${existingScene.name}`
+    },
+    event: {
+      ...state.event,
+      activeEvent: state.event.activeEvent?.sceneId === sceneId ? null : state.event.activeEvent,
+      sceneEventCache: pruneSceneCache(state.event.sceneEventCache, [sceneId])
+    },
+    ui: {
+      ...state.ui,
+      generatingSceneIds: state.ui.generatingSceneIds.filter((id) => id !== sceneId),
+      sceneGenerationErrors: Object.fromEntries(
+        Object.entries(state.ui.sceneGenerationErrors).filter(([id]) => id !== sceneId)
+      ),
+      sceneSummary: state.ui.sceneSummary.sceneId === sceneId ? { sceneId: null, content: null } : state.ui.sceneSummary
+    }
+  };
+};
+
+export const removeRegion = (state: GameState, regionId: string): GameState => {
+  const existingRegion = state.world.data.regions.find((item) => item.id === regionId);
+
+  if (!existingRegion) {
+    return state;
+  }
+
+  const removedSceneIds = state.world.data.scenes
+    .filter((scene) => scene.regionId === regionId || existingRegion.sceneIds.includes(scene.id))
+    .map((scene) => scene.id);
+
+  return {
+    ...state,
+    navigation:
+      state.navigation.currentRegionId === regionId
+        ? {
+            currentRegionId: null,
+            currentSceneId: null
+          }
+        : state.navigation,
+    world: {
+      data: {
+        ...state.world.data,
+        regions: state.world.data.regions.filter((region) => region.id !== regionId),
+        scenes: state.world.data.scenes.filter((scene) => !removedSceneIds.includes(scene.id))
+      },
+      revision: state.world.revision + 1,
+      lastEventSummary: `区域已移除：${existingRegion.name}`
+    },
+    event: {
+      ...state.event,
+      activeEvent: state.event.activeEvent && removedSceneIds.includes(state.event.activeEvent.sceneId) ? null : state.event.activeEvent,
+      sceneEventCache: pruneSceneCache(state.event.sceneEventCache, removedSceneIds)
+    },
+    ui: {
+      ...state.ui,
+      generatingSceneIds: state.ui.generatingSceneIds.filter((id) => !removedSceneIds.includes(id)),
+      sceneGenerationErrors: Object.fromEntries(
+        Object.entries(state.ui.sceneGenerationErrors).filter(([id]) => !removedSceneIds.includes(id))
+      ),
+      sceneSummary:
+        state.ui.sceneSummary.sceneId && removedSceneIds.includes(state.ui.sceneSummary.sceneId)
+          ? { sceneId: null, content: null }
+          : state.ui.sceneSummary
+    }
+  };
+};
+
+export const upsertCharacter = (state: GameState, character: CharacterProfile): GameState => {
+  const id = character.id.trim();
+  const name = character.name.trim();
+
+  if (!id || !name) {
+    return state;
+  }
+
+  const existing = state.world.data.characters.find((item) => item.id === id);
+  const characters = existing
+    ? state.world.data.characters.map((item) => (item.id === id ? { ...existing, ...character, id, name } : item))
+    : [...state.world.data.characters, { ...character, id, name }];
+
+  return {
+    ...state,
+    world: {
+      data: {
+        ...state.world.data,
+        characters
+      },
+      revision: state.world.revision + 1,
+      lastEventSummary: `人物结构已更新：${name}`
+    },
+    event: {
+      ...state.event,
+      sceneEventCache: markSceneCacheStale(state.event.sceneEventCache)
+    }
+  };
+};
+
+export const upsertPlayerStatGroup = (state: GameState, group: PlayerStatGroup): GameState => {
+  const id = group.id.trim();
+  const label = group.label.trim();
+
+  if (!id || !label) {
+    return state;
+  }
+
+  const existing = state.player.statGroups.find((item) => item.id === id);
+  const statGroups = existing
+    ? state.player.statGroups.map((item) =>
+        item.id === id
+          ? {
+              ...existing,
+              ...group,
+              id,
+              label,
+              stats: group.stats.map((stat) => ({ ...stat }))
+            }
+          : item
+      )
+    : [
+        ...state.player.statGroups,
+        {
+          ...group,
+          id,
+          label,
+          stats: group.stats.map((stat) => ({ ...stat }))
+        }
+      ];
+
+  return {
+    ...state,
+    player: syncLegacyStats({
+      ...state.player,
+      statGroups
+    })
+  };
+};
+
+export const upsertPlayerStat = (
+  state: GameState,
+  groupId: string,
+  stat: PlayerStat & { groupLabel?: string }
+): GameState => ({
+  ...state,
+  player: syncLegacyStats({
+    ...state.player,
+    statGroups: upsertStatInGroups(state.player.statGroups, {
+      groupId,
+      groupLabel: stat.groupLabel,
+      statId: stat.id,
+      label: stat.label,
+      value: stat.value,
+      description: stat.description
+    })
+  })
 });
 
 export const setClockHour = (state: GameState, hour: number): GameState => ({

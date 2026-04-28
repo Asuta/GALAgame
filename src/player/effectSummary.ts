@@ -1,19 +1,5 @@
-import type { GameEffect, PlayerAcademics, PlayerAttributes } from './types';
-
-const attributeLabels: Record<keyof PlayerAttributes, string> = {
-  intelligence: '智力',
-  stamina: '体力',
-  agility: '敏捷',
-  insight: '悟性',
-  hp: 'HP'
-};
-
-const academicLabels: Record<keyof PlayerAcademics, string> = {
-  math: '数学',
-  literature: '语文',
-  english: '英语',
-  physics: '物理'
-};
+import type { GameEffect } from './types';
+import { ACADEMIC_STAT_LABELS, ATTRIBUTE_STAT_LABELS } from './stats';
 
 const MONEY_ITEM_PATTERN = /(现金|金钱|钱|资产|收入|工资|奖金|借款|贷款|报酬|零花钱|元|块)/;
 
@@ -42,12 +28,16 @@ const resolveMoneyItemAmount = (effect: Extract<GameEffect, { type: 'item_add' }
 };
 
 export const formatGameEffectSummary = (effect: GameEffect): string | null => {
+  if (effect.type === 'stat_delta') {
+    return `${effect.label ?? effect.statId} ${formatSignedDelta(effect.delta)}`;
+  }
+
   if (effect.type === 'attribute_delta') {
-    return `${attributeLabels[effect.target]} ${formatSignedDelta(effect.delta)}`;
+    return `${ATTRIBUTE_STAT_LABELS[effect.target]} ${formatSignedDelta(effect.delta)}`;
   }
 
   if (effect.type === 'academic_delta') {
-    return `${academicLabels[effect.subject]} ${formatSignedDelta(effect.delta)}`;
+    return `${ACADEMIC_STAT_LABELS[effect.subject]} ${formatSignedDelta(effect.delta)}`;
   }
 
   if (effect.type === 'money_delta') {

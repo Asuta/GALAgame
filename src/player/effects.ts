@@ -1,4 +1,5 @@
 import type { GameEffect, InventoryItem, PlayerState } from './types';
+import { ACADEMIC_STAT_GROUP_ID, CORE_STAT_GROUP_ID, syncLegacyStats, upsertStatInGroups } from './stats';
 
 const normalizeIdPart = (value: string): string =>
   value
@@ -66,36 +67,59 @@ export const applyGameEffects = (player: PlayerState, effects: GameEffect[] = []
   const hasCashItemCredit = effects.some((effect) => effect.type === 'item_add' && resolveMoneyItemAmount(effect) !== null);
   let nextPlayer: PlayerState = {
     ...player,
+    statGroups: player.statGroups.map((group) => ({
+      ...group,
+      stats: group.stats.map((stat) => ({ ...stat }))
+    })),
     attributes: { ...player.attributes },
     academics: { ...player.academics },
     inventory: {
       items: player.inventory.items.map((item) => ({
         ...item,
         effects: item.effects.map((effect) => ({ ...effect }))
-      }))
+      })),
+      optionDefinitions: player.inventory.optionDefinitions.map((option) => ({ ...option }))
     }
   };
 
   for (const effect of effects) {
+    if (effect.type === 'stat_delta') {
+      nextPlayer = syncLegacyStats({
+        ...nextPlayer,
+        statGroups: upsertStatInGroups(nextPlayer.statGroups, {
+          groupId: effect.groupId,
+          groupLabel: effect.groupLabel,
+          statId: effect.statId,
+          label: effect.label,
+          delta: effect.delta
+        })
+      });
+      continue;
+    }
+
     if (effect.type === 'attribute_delta') {
       nextPlayer = {
         ...nextPlayer,
-        attributes: {
-          ...nextPlayer.attributes,
-          [effect.target]: nextPlayer.attributes[effect.target] + effect.delta
-        }
+        statGroups: upsertStatInGroups(nextPlayer.statGroups, {
+          groupId: CORE_STAT_GROUP_ID,
+          statId: effect.target,
+          delta: effect.delta
+        })
       };
+      nextPlayer = syncLegacyStats(nextPlayer);
       continue;
     }
 
     if (effect.type === 'academic_delta') {
       nextPlayer = {
         ...nextPlayer,
-        academics: {
-          ...nextPlayer.academics,
-          [effect.subject]: nextPlayer.academics[effect.subject] + effect.delta
-        }
+        statGroups: upsertStatInGroups(nextPlayer.statGroups, {
+          groupId: ACADEMIC_STAT_GROUP_ID,
+          statId: effect.subject,
+          delta: effect.delta
+        })
       };
+      nextPlayer = syncLegacyStats(nextPlayer);
       continue;
     }
 
@@ -137,6 +161,7 @@ export const applyGameEffects = (player: PlayerState, effects: GameEffect[] = []
         nextPlayer = {
           ...nextPlayer,
           inventory: {
+            ...nextPlayer.inventory,
             items: [...nextPlayer.inventory.items, item]
           }
         };
@@ -148,7 +173,7 @@ export const applyGameEffects = (player: PlayerState, effects: GameEffect[] = []
         };
         nextPlayer = {
           ...nextPlayer,
-          inventory: { items }
+          inventory: { ...nextPlayer.inventory, items }
         };
       }
       continue;
@@ -177,7 +202,7 @@ export const applyGameEffects = (player: PlayerState, effects: GameEffect[] = []
 
       nextPlayer = {
         ...nextPlayer,
-        inventory: { items }
+        inventory: { ...nextPlayer.inventory, items }
       };
       continue;
     }
@@ -201,7 +226,7 @@ export const applyGameEffects = (player: PlayerState, effects: GameEffect[] = []
 
       nextPlayer = {
         ...nextPlayer,
-        inventory: { items }
+        inventory: { ...nextPlayer.inventory, items }
       };
     }
   }

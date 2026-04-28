@@ -131,40 +131,33 @@ describe('resolveVisualSelection', () => {
   });
 
   it('resolves portraits through character metadata when a display name drifts from the canonical id', () => {
-    const character = worldData.characters.find((item) => item.id === '林澄')!;
-    const originalName = character.name;
+    let state = createInitialState();
+    const character = state.world.data.characters.find((item) => item.id === '林澄')!;
+    character.name = '林澄同学';
+    state = enterRegion(state, 'school');
+    state = enterScene(state, 'classroom');
 
-    try {
-      character.name = '林澄同学';
+    const event = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
 
-      let state = createInitialState();
-      state = enterRegion(state, 'school');
-      state = enterScene(state, 'classroom');
+    state = startEvent(state, {
+      ...event,
+      cast: [character.name]
+    });
 
-      const event = buildFallbackSceneEvent({
-        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
-        locationLabel: '学校 / 教室',
-        memorySummary: state.memory.summary,
-        memoryFacts: state.memory.facts,
-        timeLabel: state.clock.label,
-        timeSlot: state.clock.timeSlot
-      });
-
-      state = startEvent(state, {
-        ...event,
-        cast: [character.name]
-      });
-
-      expect(resolveVisualSelection(state)).toEqual({
-        mode: 'event',
-        background: '/assets/backgrounds/scene-classroom-main.png',
-        character: '/assets/characters/lin-cheng-half-body.png',
-        locationLabel: '学校 / 教室',
-        isGeneratedEventImage: false
-      });
-    } finally {
-      character.name = originalName;
-    }
+    expect(resolveVisualSelection(state)).toEqual({
+      mode: 'event',
+      background: '/assets/backgrounds/scene-classroom-main.png',
+      character: '/assets/characters/lin-cheng-half-body.png',
+      locationLabel: '学校 / 教室',
+      isGeneratedEventImage: false
+    });
   });
 
   it('uses a generated event image as the full visual without a character overlay', () => {

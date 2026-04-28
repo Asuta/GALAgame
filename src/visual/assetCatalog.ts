@@ -56,24 +56,73 @@ export interface ExportableVisualAsset {
   url: string;
 }
 
-export const getExportableVisualAssets = (): ExportableVisualAsset[] => [
-  {
-    key: 'asset:map:city-overview',
-    url: CITY_MAP_BACKGROUND
-  },
-  ...Object.entries(REGION_BACKGROUNDS).map(([regionId, url]) => ({
-    key: `asset:region:${regionId}`,
-    url
-  })),
-  ...Object.entries(SCENE_BACKGROUNDS).map(([sceneId, url]) => ({
-    key: `asset:scene:${sceneId}`,
-    url
-  })),
-  ...Object.entries(CHARACTER_PORTRAITS).map(([characterId, url]) => ({
-    key: `asset:character:${CHARACTER_ASSET_KEYS[characterId as VisualCharacterId]}`,
-    url
-  }))
-];
+const sanitizeAssetKeyPart = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'asset';
+
+export const getExportableVisualAssets = (worldData?: WorldData): ExportableVisualAsset[] => {
+  if (!worldData) {
+    return [
+      {
+        key: 'asset:map:city-overview',
+        url: CITY_MAP_BACKGROUND
+      },
+      ...Object.entries(REGION_BACKGROUNDS).map(([regionId, url]) => ({
+        key: `asset:region:${regionId}`,
+        url
+      })),
+      ...Object.entries(SCENE_BACKGROUNDS).map(([sceneId, url]) => ({
+        key: `asset:scene:${sceneId}`,
+        url
+      })),
+      ...Object.entries(CHARACTER_PORTRAITS).map(([characterId, url]) => ({
+        key: `asset:character:${CHARACTER_ASSET_KEYS[characterId as VisualCharacterId]}`,
+        url
+      }))
+    ];
+  }
+
+  const assets: ExportableVisualAsset[] = [];
+
+  if (worldData.mapImageUrl) {
+    assets.push({ key: 'asset:map:city-overview', url: worldData.mapImageUrl });
+  }
+
+  for (const region of worldData.regions) {
+    const url = region.imageUrl ?? (isVisualRegionId(region.id) ? REGION_BACKGROUNDS[region.id] : null);
+    if (url) {
+      assets.push({ key: `asset:region:${sanitizeAssetKeyPart(region.id)}`, url });
+    }
+  }
+
+  for (const scene of worldData.scenes) {
+    const url = scene.imageUrl ?? (isVisualSceneId(scene.id) ? SCENE_BACKGROUNDS[scene.id] : null);
+    if (url) {
+      assets.push({ key: `asset:scene:${sanitizeAssetKeyPart(scene.id)}`, url });
+    }
+  }
+
+  for (const character of worldData.characters) {
+    const url =
+      character.imageUrl ??
+      (isVisualCharacterId(character.id)
+        ? CHARACTER_PORTRAITS[character.id]
+        : isVisualCharacterId(character.name)
+          ? CHARACTER_PORTRAITS[character.name]
+          : null);
+    if (url) {
+      const characterKey =
+        isVisualCharacterId(character.id) ? CHARACTER_ASSET_KEYS[character.id] : sanitizeAssetKeyPart(character.id);
+      assets.push({ key: `asset:character:${characterKey}`, url });
+    }
+  }
+
+  return assets;
+};
 
 const STATIC_ASSET_MEDIA_URLS = new Map(getExportableVisualAssets().map((asset) => [asset.url, `media://${asset.key}`]));
 
@@ -103,6 +152,10 @@ const resolveCharacterPortrait = (castMember: string | null, worldData: WorldDat
     return null;
   }
 
+  if (matchedCharacter.imageUrl) {
+    return matchedCharacter.imageUrl;
+  }
+
   if (isVisualCharacterId(matchedCharacter.id)) {
     return CHARACTER_PORTRAITS[matchedCharacter.id];
   }
@@ -114,9 +167,20 @@ const resolveCharacterPortrait = (castMember: string | null, worldData: WorldDat
   return null;
 };
 
-export const resolveSceneBackground = (sceneId: string | null, regionId: string | null): string => {
+export const resolveSceneBackground = (sceneId: string | null, regionId: string | null, worldData?: WorldData): string => {
+  const scene = sceneId ? worldData?.scenes.find((item) => item.id === sceneId) : null;
+  const region = regionId ? worldData?.regions.find((item) => item.id === regionId) : null;
+
+  if (scene?.imageUrl) {
+    return scene.imageUrl;
+  }
+
   if (sceneId && isVisualSceneId(sceneId)) {
     return SCENE_BACKGROUNDS[sceneId];
+  }
+
+  if (region?.imageUrl) {
+    return region.imageUrl;
   }
 
   if (regionId && isVisualRegionId(regionId)) {
@@ -136,7 +200,7 @@ export const resolveVisualSelection = (state: GameState): VisualSelection => {
   if (!regionId) {
     return {
       mode: 'map',
-      background: CITY_MAP_BACKGROUND,
+      background: state.world.data.mapImageUrl ?? CITY_MAP_BACKGROUND,
       character: null,
       locationLabel: '世界地图',
       isGeneratedEventImage: false
@@ -151,7 +215,7 @@ export const resolveVisualSelection = (state: GameState): VisualSelection => {
 
   return {
     mode: isEventVisual ? 'event' : 'region',
-    background: generatedEventImage ?? resolveSceneBackground(sceneId, regionId),
+    background: generatedEventImage ?? resolveSceneBackground(sceneId, regionId, state.world.data),
     character: isEventVisual && !generatedEventImage ? resolveCharacterPortrait(activeCharacterId, state.world.data) : null,
     locationLabel: visualEvent?.locationLabel ?? region?.name ?? '世界地图',
     isGeneratedEventImage: !!generatedEventImage

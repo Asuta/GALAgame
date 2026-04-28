@@ -461,6 +461,7 @@ describe('renderApp', () => {
         ...state.player,
         money: 500,
         inventory: {
+          optionDefinitions: [],
           items: [
             {
               id: 'item-mind-glasses',

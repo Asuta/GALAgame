@@ -49,21 +49,6 @@ const phaseLabels = {
   resolution: '收束'
 };
 
-const attributeLabels = {
-  intelligence: '智力',
-  stamina: '体力',
-  agility: '敏捷',
-  insight: '悟性',
-  hp: 'HP'
-};
-
-const academicLabels = {
-  math: '数学',
-  literature: '语文',
-  english: '英语',
-  physics: '物理'
-};
-
 const formatTimeInputValue = (minutes: number): string => {
   const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
   const hour = Math.floor(normalized / 60);
@@ -628,29 +613,29 @@ export const createAppMarkup = (state: GameState): string => {
   }
 
   if (state.ui.currentPage === 'character') {
-    const attributeRows = Object.entries(state.player.attributes)
-      .map(([key, value]) => {
-        const label = attributeLabels[key as keyof typeof attributeLabels] ?? key;
-
-        return `
-          <div class="player-stat-row">
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(String(value))}</strong>
+    const statGroupCards = state.player.statGroups
+      .map(
+        (group) => `
+          <div class="settings-card">
+            <div class="settings-section-heading">
+              <strong>${escapeHtml(group.label)}</strong>
+              <span>${group.stats.length} 项</span>
+            </div>
+            <div class="player-stat-grid">
+              ${group.stats
+                .map(
+                  (stat) => `
+                    <div class="player-stat-row">
+                      <span>${escapeHtml(stat.label)}</span>
+                      <strong>${escapeHtml(String(stat.value))}</strong>
+                    </div>
+                  `
+                )
+                .join('')}
+            </div>
           </div>
-        `;
-      })
-      .join('');
-    const academicRows = Object.entries(state.player.academics)
-      .map(([key, value]) => {
-        const label = academicLabels[key as keyof typeof academicLabels] ?? key;
-
-        return `
-          <div class="player-stat-row">
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(String(value))}</strong>
-          </div>
-        `;
-      })
+        `
+      )
       .join('');
     const inventoryMarkup = state.player.inventory.items.length
       ? state.player.inventory.items
@@ -716,20 +701,7 @@ export const createAppMarkup = (state: GameState): string => {
               <span>当前资产</span>
               <strong>${escapeHtml(String(state.player.money))}</strong>
             </div>
-            <div class="settings-card">
-              <div class="settings-section-heading">
-                <strong>基础属性</strong>
-                <span>角色能力</span>
-              </div>
-              <div class="player-stat-grid">${attributeRows}</div>
-            </div>
-            <div class="settings-card">
-              <div class="settings-section-heading">
-                <strong>学科能力</strong>
-                <span>校园表现</span>
-              </div>
-              <div class="player-stat-grid">${academicRows}</div>
-            </div>
+            ${statGroupCards}
             <div class="settings-card">
               <div class="settings-section-heading">
                 <strong>背包</strong>

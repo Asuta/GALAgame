@@ -27,12 +27,26 @@ import {
   startTaskImageGeneration,
   startSceneGeneration,
   startEvent,
-  startStreamingReply
+  startStreamingReply,
+  removeRegion,
+  removeScene,
+  upsertCharacter,
+  upsertRegion,
+  upsertScene
 } from '../../src/state/store';
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
 
 describe('store transitions', () => {
+  it('creates fresh initial world data without reusing a mutated runtime object', () => {
+    const first = createInitialState();
+    first.world.data.regions.push({ id: 'gym', name: '体育馆', sceneIds: [] });
+
+    const second = createInitialState();
+
+    expect(second.world.data.regions.map((region) => region.id)).toEqual(['school', 'hospital', 'mall', 'home']);
+  });
+
   it('moves from world map to region scene to event and back', () => {
     let state = createInitialState();
 
@@ -215,6 +229,89 @@ describe('store transitions', () => {
 
     expect(isSceneEventReusable(state, 'classroom')).toBe(false);
     expect(state.event.sceneEventCache.classroom?.status).toBe('stale');
+  });
+
+  it('adds runtime regions, scenes, and characters while invalidating stale scene caches', () => {
+    let state = createInitialState();
+    const classroomEvent = buildFallbackSceneEvent({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    state = cacheSceneEvent(state, classroomEvent);
+    state = upsertRegion(state, { id: 'gym', name: '体育馆', sceneIds: [] });
+    state = upsertScene(state, {
+      id: 'gym-court',
+      regionId: 'gym',
+      name: '篮球馆',
+      description: '木地板上还留着训练后的回声。',
+      eventSeed: {
+        baseTitle: '训练后的体育馆',
+        castIds: ['许夏'],
+        tones: ['开阔'],
+        buildUpGoals: ['让玩家注意到新场景里的异常'],
+        triggerHints: ['器材室忽然响了一下'],
+        resolutionDirections: ['把这一幕收在场馆灯光下'],
+        premiseTemplates: ['体育馆里只剩几盏灯亮着。'],
+        suspenseSeeds: ['器材室里是谁']
+      }
+    });
+    state = upsertCharacter(state, {
+      id: '许夏',
+      name: '许夏',
+      gender: '女',
+      identity: '体育馆里新出现的角色',
+      age: '17岁左右',
+      personality: '直接、爽朗',
+      speakingStyle: '短句，语气利落',
+      relationshipToPlayer: '刚认识',
+      hardRules: ['不改变姓名']
+    });
+
+    expect(state.world.data.regions.find((region) => region.id === 'gym')?.sceneIds).toContain('gym-court');
+    expect(state.world.data.scenes.find((scene) => scene.id === 'gym-court')?.name).toBe('篮球馆');
+    expect(state.world.data.characters.find((character) => character.id === '许夏')?.identity).toContain('体育馆');
+    expect(state.world.revision).toBe(3);
+    expect(isSceneEventReusable(state, 'classroom')).toBe(false);
+  });
+
+  it('removes runtime scenes and regions while clearing navigation and generated state', () => {
+    let state = createInitialState();
+    state = upsertRegion(state, { id: 'gym', name: '体育馆', sceneIds: [] });
+    state = upsertScene(state, {
+      id: 'gym-court',
+      regionId: 'gym',
+      name: '篮球馆',
+      description: '木地板上还留着训练后的回声。',
+      eventSeed: {
+        baseTitle: '训练后的体育馆',
+        castIds: [],
+        tones: [],
+        buildUpGoals: ['观察场馆'],
+        triggerHints: ['灯光闪了一下'],
+        resolutionDirections: ['暂时离开'],
+        premiseTemplates: ['体育馆里很安静。'],
+        suspenseSeeds: []
+      }
+    });
+    state = enterRegion(state, 'gym');
+    state = enterScene(state, 'gym-court');
+    state = startSceneGeneration(state, 'gym-court');
+
+    state = removeScene(state, 'gym-court');
+
+    expect(state.navigation.currentSceneId).toBeNull();
+    expect(state.world.data.scenes.some((scene) => scene.id === 'gym-court')).toBe(false);
+    expect(state.ui.generatingSceneIds).not.toContain('gym-court');
+
+    state = removeRegion(state, 'gym');
+
+    expect(state.navigation.currentRegionId).toBeNull();
+    expect(state.world.data.regions.some((region) => region.id === 'gym')).toBe(false);
   });
 
   it('falls back to a non-character scene seed when that character already occupies another location', () => {

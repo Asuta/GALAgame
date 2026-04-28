@@ -838,7 +838,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     const scene = state.world.data.scenes.find((item) => item.id === eventForImage.sceneId) ?? null;
     const referenceImageUrls = [
-      resolveSceneBackground(eventForImage.sceneId, state.navigation.currentRegionId),
+      resolveSceneBackground(eventForImage.sceneId, state.navigation.currentRegionId, state.world.data),
       resolveCharacterReference(eventForImage.cast[0] ?? null, state.world.data)
     ].filter((url): url is string => !!url);
 

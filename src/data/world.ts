@@ -1,11 +1,34 @@
 import type { WorldData } from './types';
 
-export const worldData: WorldData = {
+const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const ORIGINAL_WORLD_DATA: WorldData = {
+  mapImageUrl: '/assets/map/city-overview-main.png',
   regions: [
-    { id: 'school', name: '学校', sceneIds: ['classroom', 'hallway', 'playground', 'rooftop'] },
-    { id: 'hospital', name: '医院', sceneIds: ['lobby', 'ward', 'hospital-hallway', 'vending-zone'] },
-    { id: 'mall', name: '商场', sceneIds: ['atrium', 'cafe', 'cinema-gate', 'accessory-shop'] },
-    { id: 'home', name: '主角家', sceneIds: ['living-room', 'bedroom', 'balcony', 'entryway'] }
+    {
+      id: 'school',
+      name: '学校',
+      sceneIds: ['classroom', 'hallway', 'playground', 'rooftop'],
+      imageUrl: '/assets/backgrounds/region-school-main.png'
+    },
+    {
+      id: 'hospital',
+      name: '医院',
+      sceneIds: ['lobby', 'ward', 'hospital-hallway', 'vending-zone'],
+      imageUrl: '/assets/backgrounds/region-hospital-main.png'
+    },
+    {
+      id: 'mall',
+      name: '商场',
+      sceneIds: ['atrium', 'cafe', 'cinema-gate', 'accessory-shop'],
+      imageUrl: '/assets/backgrounds/region-mall-main.png'
+    },
+    {
+      id: 'home',
+      name: '主角家',
+      sceneIds: ['living-room', 'bedroom', 'balcony', 'entryway'],
+      imageUrl: '/assets/backgrounds/region-home-main.png'
+    }
   ],
   scenes: [
     {
@@ -13,6 +36,7 @@ export const worldData: WorldData = {
       regionId: 'school',
       name: '教室',
       description: '放学后的教室被夕阳染成暖金色。',
+      imageUrl: '/assets/backgrounds/scene-classroom-main.png',
       eventSeed: {
         baseTitle: '放学后的空教室',
         castIds: ['林澄'],
@@ -41,6 +65,7 @@ export const worldData: WorldData = {
       regionId: 'school',
       name: '走廊',
       description: '窗边的风吹动着张贴的社团海报。',
+      imageUrl: '/assets/backgrounds/scene-hallway-main.png',
       eventSeed: {
         baseTitle: '风吹过的走廊',
         castIds: [],
@@ -58,6 +83,7 @@ export const worldData: WorldData = {
       regionId: 'school',
       name: '操场',
       description: '远处还能听见篮球落地的回响。',
+      imageUrl: '/assets/backgrounds/scene-playground-main.png',
       eventSeed: {
         baseTitle: '操场边的回声',
         castIds: [],
@@ -75,6 +101,7 @@ export const worldData: WorldData = {
       regionId: 'school',
       name: '天台',
       description: '城市的风从高处掠过。',
+      imageUrl: '/assets/backgrounds/scene-rooftop-main.png',
       eventSeed: {
         baseTitle: '风大的天台',
         castIds: [],
@@ -92,6 +119,7 @@ export const worldData: WorldData = {
       regionId: 'hospital',
       name: '大厅',
       description: '消毒水味混着轻微脚步声。',
+      imageUrl: '/assets/backgrounds/scene-lobby-main.png',
       eventSeed: {
         baseTitle: '医院大厅的擦肩',
         castIds: [],
@@ -109,6 +137,7 @@ export const worldData: WorldData = {
       regionId: 'hospital',
       name: '病房',
       description: '白色帘子随着空调轻轻晃动。',
+      imageUrl: '/assets/backgrounds/scene-ward-main.png',
       eventSeed: {
         baseTitle: '安静探望',
         castIds: ['林澄'],
@@ -137,6 +166,7 @@ export const worldData: WorldData = {
       regionId: 'hospital',
       name: '走廊',
       description: '夜班灯光把地面照得发白。',
+      imageUrl: '/assets/backgrounds/scene-hospital-hallway-main.png',
       eventSeed: {
         baseTitle: '发白的走廊',
         castIds: [],
@@ -154,6 +184,7 @@ export const worldData: WorldData = {
       regionId: 'hospital',
       name: '自动贩卖机区',
       description: '饮料机发出轻微的电流声。',
+      imageUrl: '/assets/backgrounds/scene-vending-zone-main.png',
       eventSeed: {
         baseTitle: '自动贩卖机前',
         castIds: [],
@@ -171,6 +202,7 @@ export const worldData: WorldData = {
       regionId: 'mall',
       name: '一层中庭',
       description: '商场广播正播着轻快的歌。',
+      imageUrl: '/assets/backgrounds/scene-atrium-main.png',
       eventSeed: {
         baseTitle: '商场中庭的停顿',
         castIds: [],
@@ -188,6 +220,7 @@ export const worldData: WorldData = {
       regionId: 'mall',
       name: '咖啡店',
       description: '咖啡香把气氛变得柔软。',
+      imageUrl: '/assets/backgrounds/scene-cafe-main.png',
       eventSeed: {
         baseTitle: '雨天咖啡店',
         castIds: ['林澄'],
@@ -216,6 +249,7 @@ export const worldData: WorldData = {
       regionId: 'mall',
       name: '电影院门口',
       description: '海报灯箱映着来往的人群。',
+      imageUrl: '/assets/backgrounds/scene-cinema-gate-main.png',
       eventSeed: {
         baseTitle: '灯箱前的迟到',
         castIds: [],
@@ -233,6 +267,7 @@ export const worldData: WorldData = {
       regionId: 'mall',
       name: '饰品店',
       description: '玻璃展柜里闪着细小反光。',
+      imageUrl: '/assets/backgrounds/scene-accessory-shop-main.png',
       eventSeed: {
         baseTitle: '饰品店的镜面反光',
         castIds: [],
@@ -250,6 +285,7 @@ export const worldData: WorldData = {
       regionId: 'home',
       name: '客厅',
       description: '傍晚的客厅有一点安静过头。',
+      imageUrl: '/assets/backgrounds/scene-living-room-main.png',
       eventSeed: {
         baseTitle: '安静过头的客厅',
         castIds: [],
@@ -267,6 +303,7 @@ export const worldData: WorldData = {
       regionId: 'home',
       name: '卧室',
       description: '桌面上摊着没看完的习题册。',
+      imageUrl: '/assets/backgrounds/scene-bedroom-main.png',
       eventSeed: {
         baseTitle: '桌灯下的消息',
         castIds: [],
@@ -284,6 +321,7 @@ export const worldData: WorldData = {
       regionId: 'home',
       name: '阳台',
       description: '夜风吹起窗帘的边角。',
+      imageUrl: '/assets/backgrounds/scene-balcony-main.png',
       eventSeed: {
         baseTitle: '深夜来电',
         castIds: ['周然'],
@@ -312,6 +350,7 @@ export const worldData: WorldData = {
       regionId: 'home',
       name: '门口',
       description: '鞋柜上还放着今天出门时忘记带走的钥匙。',
+      imageUrl: '/assets/backgrounds/scene-entryway-main.png',
       eventSeed: {
         baseTitle: '门口的停顿',
         castIds: [],
@@ -335,7 +374,8 @@ export const worldData: WorldData = {
       personality: '安静、克制、敏感，内心有心事，不会轻易把真实想法全部说出口',
       speakingStyle: '说话偏轻、偏短句，情绪起伏含蓄，不会突然变成夸张搞笑或油滑语气',
       relationshipToPlayer: '与玩家处于暧昧建立初期，正在从陌生转向信任',
-      hardRules: ['绝不能改成男性', '不改变既定身份', '不突然自称与设定矛盾的内容']
+      hardRules: ['绝不能改成男性', '不改变既定身份', '不突然自称与设定矛盾的内容'],
+      imageUrl: '/assets/characters/lin-cheng-half-body.png'
     },
     {
       id: '周然',
@@ -346,7 +386,12 @@ export const worldData: WorldData = {
       personality: '外表轻松，观察力强，偶尔会用玩笑掩饰认真',
       speakingStyle: '语气自然，带一点调侃，但不会抢主线戏份',
       relationshipToPlayer: '辅助角色，不是当前主要恋爱对象',
-      hardRules: ['不抢走林澄的主线定位', '不擅自改变性别与身份']
+      hardRules: ['不抢走林澄的主线定位', '不擅自改变性别与身份'],
+      imageUrl: '/assets/characters/zhou-ran-half-body.png'
     }
   ]
 };
+
+export const createInitialWorldData = (): WorldData => cloneJson(ORIGINAL_WORLD_DATA);
+
+export const worldData: WorldData = createInitialWorldData();

@@ -207,6 +207,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const PLAYER_ATTRIBUTE_KEYS: Array<keyof PlayerAttributes> = ['intelligence', 'stamina', 'agility', 'insight', 'hp'];
 const PLAYER_ACADEMIC_KEYS: Array<keyof PlayerAcademics> = ['math', 'literature', 'english', 'physics'];
 const EFFECT_TYPE_ALIASES: Record<string, GameEffect['type']> = {
+  stat_delta: 'stat_delta',
+  statDelta: 'stat_delta',
+  属性数值变化: 'stat_delta',
   attribute_delta: 'attribute_delta',
   attributeDelta: 'attribute_delta',
   属性变化: 'attribute_delta',
@@ -266,6 +269,15 @@ const isPlayerAcademicKey = (value: string): value is keyof PlayerAcademics =>
 
 const normalizeEffectType = (value: unknown): GameEffect['type'] | null =>
   typeof value === 'string' ? (EFFECT_TYPE_ALIASES[value.trim()] ?? null) : null;
+
+const readTextId = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
 
 const normalizeAttributeKey = (value: unknown): keyof PlayerAttributes | null => {
   if (typeof value !== 'string') {
@@ -366,6 +378,25 @@ const parseGameEffects = (value: unknown): GameEffect[] => {
 
   return value.filter(isRecord).flatMap((effect): GameEffect[] => {
     const effectType = normalizeEffectType(effect.type);
+
+    if (
+      effectType === 'stat_delta' &&
+      readTextId(effect.groupId) &&
+      readTextId(effect.statId) &&
+      readNumericDelta(effect.delta) !== null
+    ) {
+      return [
+        {
+          type: 'stat_delta',
+          groupId: readTextId(effect.groupId)!,
+          groupLabel: typeof effect.groupLabel === 'string' ? effect.groupLabel : undefined,
+          statId: readTextId(effect.statId)!,
+          label: typeof effect.label === 'string' ? effect.label : undefined,
+          delta: readNumericDelta(effect.delta)!,
+          reason: typeof effect.reason === 'string' ? effect.reason : undefined
+        }
+      ];
+    }
 
     if (
       effectType === 'attribute_delta' &&
@@ -592,7 +623,7 @@ export const buildEventTimeSettlementRequest = ({
         '必须包含字段：minutesElapsed, summary, effects。',
         'minutesElapsed 代表这次事件在世界里实际消耗的分钟数。',
         'effects 是这次经历对玩家数值和背包的影响数组；没有影响时返回空数组。',
-        'effects 支持：attribute_delta, academic_delta, money_delta, item_add, item_remove, item_update。',
+        'effects 支持：stat_delta, money_delta, item_add, item_remove, item_update。数值属性变化优先使用 stat_delta，字段为 groupId, statId, delta，可选 groupLabel, label, reason。',
         '属性 target 只能是 intelligence, stamina, agility, insight, hp；学科 subject 只能是 math, literature, english, physics。',
         '如果事件中购买了物品，effects 必须同时包含 item_add；如果能判断花费，必须包含 money_delta。',
         '如果事件中受伤、疲惫、学习、训练、赚钱、花钱或获得物品，不要只写进 summary/facts，必须写进 effects。'
@@ -609,7 +640,7 @@ export const buildEventTimeSettlementRequest = ({
         ...withPlayerStatePrompt(playerStatePrompt),
         '请根据事件规模、对话长度、冲突和推进强度，判断这次事件大概耗时多少分钟。',
         '如果只是短暂交流，耗时分钟可以在 10-30；如果剧情很多、经历明显冲突，耗时分钟可以更长。',
-        '输出示例：{"minutesElapsed":20,"summary":"你买到了一把剪刀。","effects":[{"type":"item_add","item":{"name":"剪刀","description":"一把普通剪刀。","abilityText":"可以剪开纸张、线头或简单包装。","effects":[{"type":"cut_simple_material","scope":"ordinary"}]},"quantity":1},{"type":"money_delta","delta":-12,"reason":"购买剪刀"}]}'
+        '输出示例：{"minutesElapsed":20,"summary":"你买到了一把剪刀。","effects":[{"type":"stat_delta","groupId":"core","statId":"stamina","label":"体力","delta":-1,"reason":"来回奔走"},{"type":"item_add","item":{"name":"剪刀","description":"一把普通剪刀。","abilityText":"可以剪开纸张、线头或简单包装。","effects":[{"type":"cut_simple_material","scope":"ordinary"}]},"quantity":1},{"type":"money_delta","delta":-12,"reason":"购买剪刀"}]}'
       ].join('\n')
     }
   ]
@@ -736,7 +767,7 @@ export const buildTaskResultRequest = ({
         '必须包含字段：summary, facts, effects。',
         'summary 是给玩家看的几段结果总结；facts 是可以写入世界记忆的短句数组。',
         'effects 是这次任务对玩家数值和背包的影响数组；没有影响时返回空数组。',
-        'effects 支持：attribute_delta, academic_delta, money_delta, item_add, item_remove, item_update。',
+        'effects 支持：stat_delta, money_delta, item_add, item_remove, item_update。数值属性变化优先使用 stat_delta，字段为 groupId, statId, delta，可选 groupLabel, label, reason。',
         '属性 target 只能是 intelligence, stamina, agility, insight, hp；学科 subject 只能是 math, literature, english, physics。',
         '如果任务目标是购买、获得或带回某个实体物品，effects 必须包含 item_add；如果能判断花费，必须包含 money_delta。',
         '如果任务导致受伤、疲惫、学习、训练、赚钱、花钱或获得物品，不要只写进 summary/facts，必须写进 effects。'
@@ -754,7 +785,7 @@ export const buildTaskResultRequest = ({
         ...withPlayerStatePrompt(playerStatePrompt),
         '请忽略细节过程，直接推演这段时间结束后发生了什么、任务完成得如何、世界状态有什么轻微变化。',
         '可以出现插曲，但插曲必须留在任务内部，不要把它升级为独立事件。',
-        '输出示例：{"summary":"你去超市买到了一把剪刀。","facts":["你购买了剪刀"],"effects":[{"type":"item_add","item":{"name":"剪刀","description":"一把普通剪刀。","abilityText":"可以剪开纸张、线头或简单包装。","effects":[{"type":"cut_simple_material","scope":"ordinary"}]},"quantity":1},{"type":"money_delta","delta":-12,"reason":"购买剪刀"}]}'
+        '输出示例：{"summary":"你去超市买到了一把剪刀。","facts":["你购买了剪刀"],"effects":[{"type":"stat_delta","groupId":"academics","statId":"math","label":"数学","delta":1,"reason":"路上复盘错题"},{"type":"item_add","item":{"name":"剪刀","description":"一把普通剪刀。","abilityText":"可以剪开纸张、线头或简单包装。","effects":[{"type":"cut_simple_material","scope":"ordinary"}]},"quantity":1},{"type":"money_delta","delta":-12,"reason":"购买剪刀"}]}'
       ].join('\n')
     }
   ]
@@ -863,7 +894,7 @@ export const buildTaskFinalSummaryRequest = ({
         '请输出 JSON 对象，不要添加代码块。',
         '必须包含字段：summary, facts, effects。',
         'effects 是这次任务对玩家数值和背包的影响数组；没有影响时返回空数组。',
-        'effects 支持：attribute_delta, academic_delta, money_delta, item_add, item_remove, item_update。',
+        'effects 支持：stat_delta, money_delta, item_add, item_remove, item_update。数值属性变化优先使用 stat_delta，字段为 groupId, statId, delta，可选 groupLabel, label, reason。',
         '如果任务中购买、获得或带回某个实体物品，effects 必须包含 item_add；如果能判断花费，必须包含 money_delta。',
         '如果任务导致受伤、疲惫、学习、训练、赚钱、花钱或获得物品，不要只写进 summary/facts，必须写进 effects。'
       ].join('\n')

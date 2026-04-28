@@ -18,6 +18,7 @@ export interface Region {
   id: string;
   name: string;
   sceneIds: string[];
+  imageUrl?: string;
 }
 
 export interface SceneEventSeed {
@@ -37,6 +38,7 @@ export interface Scene {
   regionId: string;
   name: string;
   description: string;
+  imageUrl?: string;
   eventSeed: SceneEventSeed;
   fallbackEventSeed?: SceneEventSeed;
 }
@@ -117,9 +119,11 @@ export interface CharacterProfile {
   speakingStyle: string;
   relationshipToPlayer: string;
   hardRules: string[];
+  imageUrl?: string;
 }
 
 export interface WorldData {
+  mapImageUrl?: string;
   regions: Region[];
   scenes: Scene[];
   characters: CharacterProfile[];

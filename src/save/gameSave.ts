@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { worldData } from '../data/world';
+import { createInitialWorldData } from '../data/world';
 import { createInitialState, type GameState } from '../state/store';
 import { clampStreamCharsPerSecond, type StoredSettings } from '../settings/storage';
 import { normalizePlayerState } from '../player/storage';
@@ -49,7 +49,7 @@ const isStringArray = (value: unknown): value is string[] =>
 
 export const normalizeWorldData = (value: unknown): WorldData => {
   if (!isRecord(value)) {
-    return cloneJson(worldData);
+    return createInitialWorldData();
   }
 
   const normalizeSeed = (seed: unknown): SceneEventSeed => {
@@ -76,7 +76,8 @@ export const normalizeWorldData = (value: unknown): WorldData => {
     ? value.regions.filter(isRecord).map((region) => ({
         id: typeof region.id === 'string' ? region.id : '',
         name: typeof region.name === 'string' ? region.name : '',
-        sceneIds: isStringArray(region.sceneIds) ? region.sceneIds : []
+        sceneIds: isStringArray(region.sceneIds) ? region.sceneIds : [],
+        ...(typeof region.imageUrl === 'string' ? { imageUrl: region.imageUrl } : {})
       })).filter((region) => region.id && region.name)
     : [];
 
@@ -87,6 +88,7 @@ export const normalizeWorldData = (value: unknown): WorldData => {
         regionId: typeof scene.regionId === 'string' ? scene.regionId : '',
         name: typeof scene.name === 'string' ? scene.name : '',
         description: typeof scene.description === 'string' ? scene.description : '',
+        ...(typeof scene.imageUrl === 'string' ? { imageUrl: scene.imageUrl } : {}),
         eventSeed: normalizeSeed(scene.eventSeed),
         ...(isRecord(scene.fallbackEventSeed) ? { fallbackEventSeed: normalizeSeed(scene.fallbackEventSeed) } : {})
       })).filter((scene) => scene.id && scene.regionId && scene.name)
@@ -102,11 +104,13 @@ export const normalizeWorldData = (value: unknown): WorldData => {
         personality: typeof character.personality === 'string' ? character.personality : '',
         speakingStyle: typeof character.speakingStyle === 'string' ? character.speakingStyle : '',
         relationshipToPlayer: typeof character.relationshipToPlayer === 'string' ? character.relationshipToPlayer : '',
-        hardRules: isStringArray(character.hardRules) ? character.hardRules : []
+        hardRules: isStringArray(character.hardRules) ? character.hardRules : [],
+        ...(typeof character.imageUrl === 'string' ? { imageUrl: character.imageUrl } : {})
       })).filter((character) => character.id && character.name)
     : [];
 
   return {
+    ...(typeof value.mapImageUrl === 'string' ? { mapImageUrl: value.mapImageUrl } : {}),
     regions,
     scenes,
     characters
@@ -285,10 +289,62 @@ const getImageExtension = (contentType: string, fallbackUrl = ''): string => {
 
 const sanitizeMediaSegment = (value: string): string =>
   value
-    .replace(/[^a-z0-9_-]/gi, '-')
+    .replace(/[^a-z0-9\u4e00-\u9fa5_-]/gi, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 80) || 'image';
+
+const sanitizeAssetKeyPart = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'asset';
+
+const applyEmbeddedMediaUrlToWorld = (world: WorldData, key: string, mediaUrl: string): WorldData => {
+  if (key === 'asset:map:city-overview') {
+    return {
+      ...world,
+      mapImageUrl: mediaUrl
+    };
+  }
+
+  const [, type, id] = key.split(':');
+
+  if (!type || !id) {
+    return world;
+  }
+
+  if (type === 'region') {
+    return {
+      ...world,
+      regions: world.regions.map((region) =>
+        sanitizeAssetKeyPart(region.id) === id ? { ...region, imageUrl: mediaUrl } : region
+      )
+    };
+  }
+
+  if (type === 'scene') {
+    return {
+      ...world,
+      scenes: world.scenes.map((scene) =>
+        sanitizeAssetKeyPart(scene.id) === id ? { ...scene, imageUrl: mediaUrl } : scene
+      )
+    };
+  }
+
+  if (type === 'character') {
+    return {
+      ...world,
+      characters: world.characters.map((character) =>
+        sanitizeAssetKeyPart(character.id) === id ? { ...character, imageUrl: mediaUrl } : character
+      )
+    };
+  }
+
+  return world;
+};
 
 const collectZipImage = async (
   key: string,
@@ -355,7 +411,7 @@ export const exportGameSaveZip = async (
   const zip = new JSZip();
 
   await Promise.all(
-    getExportableVisualAssets().map(async (asset) => {
+    getExportableVisualAssets(exportedState.world.data).map(async (asset) => {
       const result = await collectZipImage(
         asset.key,
         asset.url,
@@ -456,21 +512,30 @@ export const importGameSave = async (file: File, options: ImportGameSaveOptions)
 
       const bytes = await mediaFile.async('arraybuffer');
       const blob = new Blob([bytes], { type: entry.contentType || 'application/octet-stream' });
+      const mediaUrl = createStoredMediaUrl(key);
 
       await options.saveMediaBlob(key, blob);
       bundle.embeddedMedia[key] = {
         ...entry,
-        url: createStoredMediaUrl(key)
+        url: mediaUrl
+      };
+      bundle.worldSnapshot = applyEmbeddedMediaUrlToWorld(bundle.worldSnapshot, key, mediaUrl);
+      bundle.gameState = {
+        ...bundle.gameState,
+        world: {
+          ...bundle.gameState.world,
+          data: applyEmbeddedMediaUrlToWorld(bundle.gameState.world.data, key, mediaUrl)
+        }
       };
 
       if (key.startsWith('event:')) {
         const eventId = key.slice('event:'.length);
-        bundle.gameState.event.generatedImages[eventId] = createStoredMediaUrl(key);
+        bundle.gameState.event.generatedImages[eventId] = mediaUrl;
         return;
       }
 
       if (key.startsWith('task:') && bundle.gameState.task.activeTask?.id === key.slice('task:'.length)) {
-        bundle.gameState.task.activeTask.generatedImageUrl = createStoredMediaUrl(key);
+        bundle.gameState.task.activeTask.generatedImageUrl = mediaUrl;
       }
     })
   );

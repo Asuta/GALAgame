@@ -28,13 +28,49 @@ export interface InventoryItem {
   quantity: number;
 }
 
+export interface InventoryOptionDefinition {
+  id: string;
+  label: string;
+  description: string;
+  effectType?: string;
+}
+
+export interface PlayerStat {
+  id: string;
+  label: string;
+  value: number;
+  description?: string;
+}
+
+export interface PlayerStatGroup {
+  id: string;
+  label: string;
+  stats: PlayerStat[];
+}
+
 export interface PlayerState {
+  statGroups: PlayerStatGroup[];
+  /**
+   * Legacy mirrors kept for older call sites and saved data. statGroups is the
+   * authoritative structure for rendering, prompts, and new effects.
+   */
   attributes: PlayerAttributes;
   academics: PlayerAcademics;
   money: number;
   inventory: {
     items: InventoryItem[];
+    optionDefinitions: InventoryOptionDefinition[];
   };
+}
+
+export interface StatDeltaEffect {
+  type: 'stat_delta';
+  groupId: string;
+  statId: string;
+  delta: number;
+  label?: string;
+  groupLabel?: string;
+  reason?: string;
 }
 
 export interface AttributeDeltaEffect {
@@ -84,6 +120,7 @@ export interface ItemUpdateEffect {
 }
 
 export type GameEffect =
+  | StatDeltaEffect
   | AttributeDeltaEffect
   | AcademicDeltaEffect
   | MoneyDeltaEffect
