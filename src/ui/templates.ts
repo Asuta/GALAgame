@@ -1,5 +1,5 @@
 import { getActiveEvent, getCurrentRegion, getCurrentScene, getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
-import { formatMinutesClockLabel } from '../state/store';
+import { formatDurationMinutesLabel, formatTaskClockLabel, getClockTotalMinutes } from '../state/store';
 import type { GameState } from '../state/store';
 import { formatGameEffectSummaries } from '../player/effectSummary';
 import { resolveStaticAssetMediaUrl, resolveVisualSelection } from '../visual/assetCatalog';
@@ -47,14 +47,6 @@ const phaseLabels = {
   build_up: '推进',
   overlimit: '越界',
   resolution: '收束'
-};
-
-const formatTimeInputValue = (minutes: number): string => {
-  const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
-  const hour = Math.floor(normalized / 60);
-  const minute = normalized % 60;
-
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 };
 
 const renderAppTopBar = (state: GameState, title: string): string => `
@@ -278,8 +270,7 @@ export const createAppMarkup = (state: GameState): string => {
   const bottomNav = renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) });
 
   if (state.ui.currentPage === 'task-planning') {
-    const startMinutes = state.clock.hour * 60 + state.clock.minute;
-    const endMinutes = startMinutes + 60;
+    const startMinutes = getClockTotalMinutes(state.clock);
 
     return `
       <div class="phone-frame phone-frame--settings">
@@ -301,11 +292,19 @@ export const createAppMarkup = (state: GameState): string => {
               <div class="task-time-grid">
                 <label class="task-field">
                   <span>开始时间</span>
-                  <input data-task-start-time type="time" value="${formatTimeInputValue(startMinutes)}" />
+                  <div class="task-readonly-value">${escapeHtml(formatTaskClockLabel(startMinutes))}</div>
                 </label>
                 <label class="task-field">
-                  <span>结束时间</span>
-                  <input data-task-end-time type="time" value="${formatTimeInputValue(endMinutes)}" />
+                  <span>持续时间</span>
+                  <div class="task-duration-row">
+                    <input data-task-duration-amount type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="任务持续时间数值" />
+                    <select data-task-duration-unit aria-label="任务持续时间单位">
+                      <option value="minutes">分钟</option>
+                      <option value="hours" selected>小时</option>
+                      <option value="days">天</option>
+                      <option value="years">年</option>
+                    </select>
+                  </div>
                 </label>
               </div>
               <div class="task-choice-grid" role="group" aria-label="任务执行方式">
@@ -319,12 +318,8 @@ export const createAppMarkup = (state: GameState): string => {
                 </label>
               </div>
               <label class="task-field">
-                <span>过程间隔</span>
-                <select data-task-segment-minutes>
-                  <option value="5">5 分钟</option>
-                  <option value="10" selected>10 分钟</option>
-                  <option value="15">15 分钟</option>
-                </select>
+                <span>过程次数</span>
+                <input data-task-segment-count type="number" min="1" step="1" value="5" inputmode="numeric" aria-label="任务过程拆分次数" />
               </label>
               ${state.task.error ? `<div class="event-image-error" role="alert">${escapeHtml(state.task.error)}</div>` : ''}
               <button class="settings-action-button" data-action="start-task" ${state.ui.isSending ? 'disabled' : ''}>开始任务</button>
@@ -360,7 +355,7 @@ export const createAppMarkup = (state: GameState): string => {
           <header class="settings-header">
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
-              <p>${escapeHtml(task ? `${formatMinutesClockLabel(task.startMinutes)} / ${formatMinutesClockLabel(task.endMinutes)}` : state.clock.label)}</p>
+              <p>${escapeHtml(task ? `${formatTaskClockLabel(task.startMinutes)} / ${formatTaskClockLabel(task.endMinutes)}` : state.clock.label)}</p>
               <h1>${escapeHtml(task?.title ?? '任务执行中')}</h1>
             </div>
           </header>
@@ -426,7 +421,9 @@ export const createAppMarkup = (state: GameState): string => {
                         </div>
                         <div class="task-result-loading-meta">
                           <span>任务：${escapeHtml(task.title)}</span>
-                          <span>时间：${escapeHtml(formatMinutesClockLabel(task.startMinutes))} - ${escapeHtml(formatMinutesClockLabel(task.endMinutes))}</span>
+                          <span>时间：${escapeHtml(formatTaskClockLabel(task.startMinutes))} - ${escapeHtml(formatTaskClockLabel(task.endMinutes))}</span>
+                          <span>时长：${escapeHtml(formatDurationMinutesLabel(task.durationMinutes))}</span>
+                          <span>过程：${task.segmentCount} 次</span>
                         </div>
                         <div class="task-result-loading-steps" aria-label="任务推演阶段">
                           <span class="is-active">读取角色数据</span>

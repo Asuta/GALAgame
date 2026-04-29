@@ -14,7 +14,9 @@ import {
   finishStreamingReply,
   appendTaskSegment,
   completeTask,
+  createClockState,
   finishTaskImageGeneration,
+  getClockTotalMinutes,
   invalidateSceneEventCache,
   isSceneEventReusable,
   markEventReadyToEnd,
@@ -342,7 +344,10 @@ describe('store transitions', () => {
 
     expect(state.clock.hour).toBe(18);
     expect(state.clock.minute).toBe(35);
-    expect(state.clock.label).toBe('傍晚 18:35');
+    expect(state.clock.year).toBe(2026);
+    expect(state.clock.month).toBe(4);
+    expect(state.clock.day).toBe(29);
+    expect(state.clock.label).toBe('2026年4月29日 傍晚 18:35');
     expect(state.clock.timeSlot).toBe('evening');
   });
 
@@ -357,26 +362,45 @@ describe('store transitions', () => {
 
   it('starts and completes a global task without depending on the current scene', () => {
     let state = createInitialState();
+    const startMinutes = getClockTotalMinutes(createClockState(2026, 4, 30, 6, 0));
 
     state = openTaskPlanningPage(state);
     state = startTask(state, {
       content: '晨跑一小时',
-      startMinutes: 6 * 60,
-      endMinutes: 7 * 60,
+      startMinutes,
       executionMode: 'result',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
 
     expect(state.ui.mode).toBe('task');
     expect(state.task.activeTask?.content).toBe('晨跑一小时');
-    expect(state.task.activeTask?.startMinutes).toBe(360);
+    expect(state.task.activeTask?.startMinutes).toBe(startMinutes);
 
     state = completeTask(state, '你完成了晨跑，精神变得清醒。', ['完成晨跑', '体力状态更好']);
 
     expect(state.ui.currentPage).toBe('decision');
-    expect(state.clock.label).toBe('清晨 07:00');
+    expect(state.clock.label).toBe('2026年4月30日 清晨 07:00');
     expect(state.task.lastCompletedSummary).toContain('完成了晨跑');
     expect(state.memory.facts).toContain('完成晨跑');
+  });
+
+  it('derives task end time from duration and keeps process split count', () => {
+    let state = createInitialState();
+    const startMinutes = getClockTotalMinutes(createClockState(2026, 4, 29, 18, 25));
+
+    state = startTask(state, {
+      content: '长期训练计划',
+      startMinutes,
+      executionMode: 'process',
+      durationMinutes: 5 * 365 * 24 * 60,
+      segmentCount: 5
+    });
+
+    expect(state.task.activeTask?.startMinutes).toBe(startMinutes);
+    expect(state.task.activeTask?.durationMinutes).toBe(5 * 365 * 24 * 60);
+    expect(state.task.activeTask?.endMinutes).toBe(startMinutes + 5 * 365 * 24 * 60);
+    expect(state.task.activeTask?.segmentCount).toBe(5);
   });
 
   it('advances process task segments and switches between auto and manual control', () => {
@@ -385,9 +409,9 @@ describe('store transitions', () => {
     state = startTask(state, {
       content: '复习数学',
       startMinutes: 20 * 60,
-      endMinutes: 21 * 60,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     state = appendTaskSegment(
       state,
@@ -418,9 +442,9 @@ describe('store transitions', () => {
     state = startTask(state, {
       content: '去女仆咖啡店玩一玩',
       startMinutes: 18 * 60,
-      endMinutes: 19 * 60,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     state = startTaskImageGeneration(state);
 

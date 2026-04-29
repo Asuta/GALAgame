@@ -161,9 +161,9 @@ describe('imageClient', () => {
     state = startTask(state, {
       content: '去女仆咖啡店玩一玩',
       startMinutes: 18 * 60,
-      endMinutes: 19 * 60,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     state = appendTaskSegment(
       state,
@@ -192,7 +192,8 @@ describe('imageClient', () => {
     expect(prompt).not.toContain('手机突然震动了一下');
     expect(prompt).not.toContain('任务事实');
     expect(prompt).not.toContain('手动托管记录');
-    expect(prompt).toContain('安全日常物件');
+    expect(prompt).toContain('画面小细节必须服务于任务内容本身');
+    expect(prompt).toContain('不要把任务改写成学习、购物、聊天或无关剧情');
     expect(prompt).toContain('二次元动漫视觉小说 CG 风格');
     expect(prompt).toContain('不要真实照片或写实摄影');
     expect(prompt).toContain('不要出现文字');
@@ -203,9 +204,9 @@ describe('imageClient', () => {
     state = startTask(state, {
       content: '去那种不正规的女仆咖啡店玩一玩',
       startMinutes: 18 * 60,
-      endMinutes: 19 * 60,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     const prompt = buildTaskImagePrompt({
       task: state.task.activeTask!,
@@ -228,9 +229,9 @@ describe('imageClient', () => {
     const state = startTask(createInitialState(), {
       content: '晨跑一小时',
       startMinutes: 360,
-      endMinutes: 420,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     const fetchImpl = vi.fn(async () =>
       new Response(JSON.stringify({ data: [{ url: 'https://example.com/task.png' }] }), { status: 200 })

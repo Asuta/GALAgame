@@ -502,9 +502,9 @@ describe('renderApp', () => {
     state = startTask(state, {
       content: '晨跑一小时',
       startMinutes: 360,
-      endMinutes: 420,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     state = appendTaskSegment(
       state,
@@ -559,9 +559,9 @@ describe('renderApp', () => {
     state = startTask(state, {
       content: '在早上整理书包',
       startMinutes: 360,
-      endMinutes: 420,
       executionMode: 'result',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
 
     document.body.innerHTML = '<div id="app"></div>';

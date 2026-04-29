@@ -174,6 +174,26 @@ export interface BuildTaskImagePromptRequestInput {
   playerStatePrompt?: string;
 }
 
+const formatTaskDurationForPrompt = (minutes: number): string => {
+  const rounded = Math.max(1, Math.round(minutes));
+  const dayMinutes = 24 * 60;
+  const yearMinutes = 365 * dayMinutes;
+
+  if (rounded >= yearMinutes && rounded % yearMinutes === 0) {
+    return `${rounded / yearMinutes} 年`;
+  }
+
+  if (rounded >= dayMinutes && rounded % dayMinutes === 0) {
+    return `${rounded / dayMinutes} 天`;
+  }
+
+  if (rounded >= 60 && rounded % 60 === 0) {
+    return `${rounded / 60} 小时`;
+  }
+
+  return `${rounded} 分钟`;
+};
+
 const sanitizeFact = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
 const extractJsonObject = (text: string): string | null => {
@@ -780,6 +800,8 @@ export const buildTaskResultRequest = ({
         `当前位置：${locationLabel}`,
         `任务内容：${task.content}`,
         `任务时间：${task.startMinutes} 分钟刻度到 ${task.endMinutes} 分钟刻度`,
+        `任务总时长：${task.durationMinutes} 分钟`,
+        `过程拆分次数：${task.segmentCount} 次`,
         `世界记忆摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
         ...withPlayerStatePrompt(playerStatePrompt),
@@ -801,37 +823,52 @@ export const buildTaskSegmentRequest = ({
   memoryFacts,
   locationLabel,
   playerStatePrompt
-}: BuildTaskSegmentRequestInput): ChatRequestPayload => ({
-  model,
-  messages: [
-    {
-      role: 'system',
-      content: [
-        systemPrompt,
-        '你负责按时间片推进玩家正在执行的任务。',
-        '请输出 JSON 对象，不要添加代码块。',
-        '必须包含字段：content, complication, attentionLevel。',
-        'attentionLevel 只能是 low, medium, high。',
-        '突发情况只能作为任务过程的一部分，不要转成独立事件。'
-      ].join('\n')
-    },
-    {
-      role: 'user',
-      content: [
-        `当前位置：${locationLabel}`,
-        `任务内容：${task.content}`,
-        `任务总时间：${task.startMinutes} 到 ${task.endMinutes}`,
-        `当前时间片：${fromLabel} 到 ${toLabel}`,
-        `已有片段：${task.segments.length ? task.segments.map((segment) => `${segment.fromLabel}-${segment.toLabel}：${segment.content}`).join('\n') : '暂无'}`,
-        `手动托管记录：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
-        `世界记忆摘要：${memorySummary}`,
-        `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
-        ...withPlayerStatePrompt(playerStatePrompt),
-        '请生成这一小段时间内发生的事情。内容要具体，但不要替玩家做重大选择。'
-      ].join('\n')
-    }
-  ]
-});
+}: BuildTaskSegmentRequestInput): ChatRequestPayload => {
+  const segmentNumber = task.segments.length + 1;
+  const segmentDuration = Math.max(1, Math.round(task.durationMinutes / task.segmentCount));
+  const totalDurationLabel = formatTaskDurationForPrompt(task.durationMinutes);
+  const segmentDurationLabel = formatTaskDurationForPrompt(segmentDuration);
+
+  return {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: [
+          systemPrompt,
+          '你负责按时间片推进玩家正在执行的任务。',
+          '请输出 JSON 对象，不要添加代码块。',
+          '必须包含字段：content, complication, attentionLevel。',
+          'attentionLevel 只能是 low, medium, high。',
+          'content 必须描述玩家围绕任务内容持续执行、遇到的实际困难、阶段性进展和当前状态。',
+          '如果时间片跨越数小时、数天或数年，要写成阶段性过程汇报，不要写成一场临时事件。',
+          '不要引入与任务目标无关的支线、谜题、物品、短信、陌生人委托或新事件。',
+          'complication 可以为 null；如果存在，必须是和任务本身直接相关的小阻碍。'
+        ].join('\n')
+      },
+      {
+        role: 'user',
+        content: [
+          `当前位置：${locationLabel}`,
+          `任务内容：${task.content}`,
+          `任务总时间：${task.startMinutes} 到 ${task.endMinutes}`,
+          `任务总时长：${task.durationMinutes} 分钟（约 ${totalDurationLabel}）`,
+          `过程拆分次数：${task.segmentCount} 次`,
+          `当前片段：第 ${segmentNumber} / ${task.segmentCount} 次汇报`,
+          `当前时间片：${fromLabel} 到 ${toLabel}`,
+          `本片段覆盖时长：约 ${segmentDurationLabel}`,
+          `已有片段：${task.segments.length ? task.segments.map((segment) => `${segment.fromLabel}-${segment.toLabel}：${segment.content}`).join('\n') : '暂无'}`,
+          `手动托管记录：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
+          `世界记忆摘要：${memorySummary}`,
+          `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+          ...withPlayerStatePrompt(playerStatePrompt),
+          '请只生成这一段时间里玩家如何推进该任务。必须让内容和任务目标、当前片段时长、已有进展保持一致。',
+          '长期任务要总结习惯、训练/执行节奏、阶段成果、消耗和状态变化；短期任务可以写具体动作。'
+        ].join('\n')
+      }
+    ]
+  };
+};
 
 export const buildTaskManualRequest = ({
   model,
@@ -861,6 +898,8 @@ export const buildTaskManualRequest = ({
         `当前位置：${locationLabel}`,
         `任务内容：${task.content}`,
         `任务时间：${task.startMinutes} 到 ${task.endMinutes}`,
+        `任务总时长：${task.durationMinutes} 分钟`,
+        `过程拆分次数：${task.segmentCount} 次`,
         `当前进度分钟刻度：${task.currentMinutes}`,
         `已有片段：${task.segments.length ? task.segments.map((segment) => `${segment.fromLabel}-${segment.toLabel}：${segment.content}`).join('\n') : '暂无'}`,
         `最近托管对话：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
@@ -905,6 +944,8 @@ export const buildTaskFinalSummaryRequest = ({
         `当前位置：${locationLabel}`,
         `任务内容：${task.content}`,
         `任务时间：${task.startMinutes} 到 ${task.endMinutes}`,
+        `任务总时长：${task.durationMinutes} 分钟`,
+        `过程拆分次数：${task.segmentCount} 次`,
         `任务片段：${task.segments.length ? task.segments.map((segment) => `${segment.fromLabel}-${segment.toLabel}：${segment.content}`).join('\n') : '暂无'}`,
         `手动托管记录：${task.transcript.length ? task.transcript.map((message) => `${message.label}：${message.content}`).join('\n') : '暂无'}`,
         `世界记忆摘要：${memorySummary}`,
@@ -945,6 +986,8 @@ export const buildTaskImagePromptRequest = ({
         `当前位置：${locationLabel}`,
         `任务内容：${task.content}`,
         `任务时间：${task.startMinutes} 到 ${task.endMinutes}`,
+        `任务总时长：${task.durationMinutes} 分钟`,
+        `过程拆分次数：${task.segmentCount} 次`,
         `当前进度分钟刻度：${task.currentMinutes}`,
         `任务执行方式：${task.executionMode}`,
         `托管模式：${task.controlMode}`,

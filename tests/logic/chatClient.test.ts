@@ -239,9 +239,9 @@ describe('chatClient helpers', () => {
     state = startTask(state, {
       content: '晨跑一小时',
       startMinutes: 360,
-      endMinutes: 420,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     const task = state.task.activeTask!;
 
@@ -277,11 +277,43 @@ describe('chatClient helpers', () => {
     expect(resultPayload.messages[1].content).toContain('晨跑一小时');
     expect(resultPayload.messages[1].content).toContain('忽略细节过程');
     expect(resultPayload.messages[0].content).toContain('effects 是这次任务对玩家数值和背包的影响数组');
-    expect(segmentPayload.messages[0].content).toContain('突发情况只能作为任务过程的一部分');
+    expect(segmentPayload.messages[0].content).toContain('content 必须描述玩家围绕任务内容持续执行');
+    expect(segmentPayload.messages[0].content).toContain('不要引入与任务目标无关的支线');
+    expect(segmentPayload.messages[1].content).toContain('当前片段：第 1 / 6 次汇报');
+    expect(segmentPayload.messages[1].content).toContain('本片段覆盖时长：约 10 分钟');
     expect(segmentPayload.messages[1].content).toContain('06:00 到 06:10');
     expect(manualPayload.stream).toBe(true);
     expect(manualPayload.messages[1].content).toContain('我放慢脚步看看是谁。');
     expect(manualPayload.messages[0].content).toContain('不要把突发情况升级为独立事件');
+  });
+
+  it('frames long process task segments as task-progress reports', () => {
+    let state = createInitialState();
+    state = startTask(state, {
+      content: '努力锻炼身体',
+      startMinutes: 18 * 60 + 25,
+      executionMode: 'process',
+      durationMinutes: 9 * 24 * 60,
+      segmentCount: 5
+    });
+
+    const payload = buildTaskSegmentRequest({
+      model: 'deepseek-chat',
+      systemPrompt: '你是任务过程推进器。',
+      task: state.task.activeTask!,
+      fromLabel: '傍晚 18:25',
+      toLabel: '2天 深夜 04:01',
+      memorySummary: '故事刚开始。',
+      memoryFacts: [],
+      locationLabel: '城市'
+    });
+
+    expect(payload.messages[0].content).toContain('阶段性过程汇报');
+    expect(payload.messages[0].content).toContain('不要引入与任务目标无关的支线');
+    expect(payload.messages[1].content).toContain('任务内容：努力锻炼身体');
+    expect(payload.messages[1].content).toContain('任务总时长：12960 分钟（约 9 天）');
+    expect(payload.messages[1].content).toContain('当前片段：第 1 / 5 次汇报');
+    expect(payload.messages[1].content).toContain('长期任务要总结习惯、训练/执行节奏、阶段成果、消耗和状态变化');
   });
 
   it('builds a task image prompt request from current task progress', () => {
@@ -289,9 +321,9 @@ describe('chatClient helpers', () => {
     state = startTask(state, {
       content: '去主题咖啡店玩一玩',
       startMinutes: 18 * 60,
-      endMinutes: 19 * 60,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     state = {
       ...state,
@@ -339,9 +371,9 @@ describe('chatClient helpers', () => {
     state = startTask(state, {
       content: '复习数学',
       startMinutes: 1200,
-      endMinutes: 1260,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
     const task = state.task.activeTask!;
     const settlement = parseTaskSettlement(
@@ -534,9 +566,9 @@ describe('chatClient helpers', () => {
     const state = startTask(createInitialState(), {
       content: '去主题咖啡店玩一玩',
       startMinutes: 18 * 60,
-      endMinutes: 19 * 60,
       executionMode: 'process',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
 
     await expect(

@@ -87,7 +87,8 @@ export interface TaskRuntime {
   startMinutes: number;
   endMinutes: number;
   currentMinutes: number;
-  segmentMinutes: number;
+  durationMinutes: number;
+  segmentCount: number;
   executionMode: TaskExecutionMode;
   controlMode: TaskControlMode;
   status: TaskStatus;

@@ -174,7 +174,7 @@ describe('bindUi scene switching', () => {
       id: `${task.id}-segment-${task.segments.length + 1}`,
       fromLabel,
       toLabel,
-      content: `${fromLabel} 到 ${toLabel}，任务继续推进。`,
+      content: '任务继续推进。',
       complication: '途中出现一个小插曲',
       attentionLevel: 'medium'
     }));
@@ -751,7 +751,7 @@ describe('bindUi scene switching', () => {
     (document.querySelector('[data-action="task-next-segment"]') as HTMLButtonElement).click();
     await flushUi();
     await flushUi();
-    await waitForText('18:10 到 18:20');
+    await waitForText('2026年4月29日 傍晚 18:24');
     await waitForNoElement('[data-task-streaming-bubble]');
 
     expect(requestTaskSegmentMock).toHaveBeenCalledTimes(2);

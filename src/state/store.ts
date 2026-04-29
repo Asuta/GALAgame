@@ -56,6 +56,9 @@ export interface GameState {
     };
   };
   clock: {
+    year: number;
+    month: number;
+    day: number;
     hour: number;
     minute: number;
     timeSlot: TimeSlot;
@@ -100,6 +103,13 @@ export interface GameState {
 
 const EVENT_PHASE_ORDER: EventPhase[] = ['opening', 'build_up', 'overlimit', 'resolution'];
 const NON_POSITIONAL_CASTS = new Set(['旁白', '系统']);
+const INITIAL_GAME_CLOCK = {
+  year: 2026,
+  month: 4,
+  day: 29,
+  hour: 18,
+  minute: 0
+};
 
 const getPhaseFromTurnCount = (turnCount: number): EventPhase => {
   if (turnCount >= 4) {
@@ -175,6 +185,53 @@ export const formatClockLabel = (hour: number, minute = 0): string => {
   return `${prefix} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 };
 
+export const formatFullClockLabel = (year: number, month: number, day: number, hour: number, minute = 0): string =>
+  `${year}年${month}月${day}日 ${formatClockLabel(hour, minute)}`;
+
+export const getClockTotalMinutes = (clock: Pick<GameState['clock'], 'year' | 'month' | 'day' | 'hour' | 'minute'>): number =>
+  Math.floor(Date.UTC(clock.year, clock.month - 1, clock.day, clock.hour, clock.minute) / 60000);
+
+export const createClockFromTotalMinutes = (minutes: number): GameState['clock'] => {
+  const date = new Date(Math.max(0, Math.round(minutes)) * 60000);
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const hour = date.getUTCHours();
+  const minute = date.getUTCMinutes();
+
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    timeSlot: resolveTimeSlot(hour),
+    label: formatFullClockLabel(year, month, day, hour, minute)
+  };
+};
+
+export const createClockState = (
+  year = INITIAL_GAME_CLOCK.year,
+  month = INITIAL_GAME_CLOCK.month,
+  day = INITIAL_GAME_CLOCK.day,
+  hour = INITIAL_GAME_CLOCK.hour,
+  minute = INITIAL_GAME_CLOCK.minute
+): GameState['clock'] =>
+  createClockFromTotalMinutes(
+    Math.floor(Date.UTC(year, month - 1, day, hour, minute) / 60000)
+  );
+
+export const normalizeClockState = (clock: Partial<GameState['clock']> | null | undefined): GameState['clock'] => {
+  const fallback = createClockState();
+  const year = Number.isFinite(clock?.year) ? Number(clock?.year) : fallback.year;
+  const month = Number.isFinite(clock?.month) ? Number(clock?.month) : fallback.month;
+  const day = Number.isFinite(clock?.day) ? Number(clock?.day) : fallback.day;
+  const hour = Number.isFinite(clock?.hour) ? Number(clock?.hour) : fallback.hour;
+  const minute = Number.isFinite(clock?.minute) ? Number(clock?.minute) : fallback.minute;
+
+  return createClockState(year, month, day, hour, minute);
+};
+
 export const normalizeClockMinutes = (minutes: number): number => {
   const dayMinutes = 24 * 60;
   const rounded = Math.round(minutes);
@@ -188,6 +245,28 @@ export const formatMinutesClockLabel = (minutes: number): string => {
   const minute = normalized % 60;
 
   return formatClockLabel(hour, minute);
+};
+
+export const formatTaskClockLabel = (minutes: number): string => {
+  return createClockFromTotalMinutes(minutes).label;
+};
+
+export const formatDurationMinutesLabel = (minutes: number): string => {
+  let remaining = Math.max(1, Math.round(minutes));
+  const years = Math.floor(remaining / (365 * 24 * 60));
+  remaining -= years * 365 * 24 * 60;
+  const days = Math.floor(remaining / (24 * 60));
+  remaining -= days * 24 * 60;
+  const hours = Math.floor(remaining / 60);
+  remaining -= hours * 60;
+  const parts = [
+    years > 0 ? `${years}年` : '',
+    days > 0 ? `${days}天` : '',
+    hours > 0 ? `${hours}小时` : '',
+    remaining > 0 ? `${remaining}分钟` : ''
+  ].filter(Boolean);
+
+  return parts.join('') || '1分钟';
 };
 
 export const createInitialState = (): GameState => ({
@@ -214,10 +293,7 @@ export const createInitialState = (): GameState => ({
     }
   },
   clock: {
-    hour: 18,
-    minute: 0,
-    timeSlot: resolveTimeSlot(18),
-    label: formatClockLabel(18, 0)
+    ...createClockState()
   },
   world: {
     data: createInitialWorldData(),
@@ -696,28 +772,16 @@ export const upsertPlayerStat = (
 
 export const setClockHour = (state: GameState, hour: number): GameState => ({
   ...state,
-  clock: {
-    hour,
-    minute: 0,
-    timeSlot: resolveTimeSlot(hour),
-    label: formatClockLabel(hour, 0)
-  }
+  clock: createClockState(state.clock.year, state.clock.month, state.clock.day, hour, 0)
 });
 
 export const advanceClockByMinutes = (state: GameState, minutesElapsed: number): GameState => {
-  const startTotalMinutes = state.clock.hour * 60 + state.clock.minute;
+  const startTotalMinutes = getClockTotalMinutes(state.clock);
   const nextTotalMinutes = Math.max(0, startTotalMinutes + Math.max(0, Math.round(minutesElapsed)));
-  const nextHour = Math.floor(nextTotalMinutes / 60) % 24;
-  const nextMinute = nextTotalMinutes % 60;
 
   return {
     ...state,
-    clock: {
-      hour: nextHour,
-      minute: nextMinute,
-      timeSlot: resolveTimeSlot(nextHour),
-      label: formatClockLabel(nextHour, nextMinute)
-    }
+    clock: createClockFromTotalMinutes(nextTotalMinutes)
   };
 };
 
@@ -868,16 +932,19 @@ export const startTask = (
   input: {
     content: string;
     startMinutes: number;
-    endMinutes: number;
     executionMode: TaskExecutionMode;
-    segmentMinutes: number;
+    durationMinutes: number;
+    segmentCount: number;
   }
 ): GameState => {
   const content = input.content.trim();
   const title = content.length > 18 ? `${content.slice(0, 18)}...` : content;
-  const startMinutes = normalizeClockMinutes(input.startMinutes);
-  const endMinutes = Math.max(startMinutes + 1, Math.round(input.endMinutes));
-  const segmentMinutes = Math.max(5, Math.min(60, Math.round(input.segmentMinutes)));
+  const startMinutes = Math.max(0, Math.round(input.startMinutes));
+  const durationMinutes = Number.isFinite(input.durationMinutes) ? Math.max(1, Math.round(input.durationMinutes)) : 60;
+  const endMinutes = startMinutes + durationMinutes;
+  const segmentCount = Number.isFinite(input.segmentCount)
+    ? Math.max(1, Math.min(durationMinutes, Math.round(input.segmentCount)))
+    : 1;
 
   return {
     ...state,
@@ -897,7 +964,8 @@ export const startTask = (
         startMinutes,
         endMinutes,
         currentMinutes: startMinutes,
-        segmentMinutes,
+        durationMinutes,
+        segmentCount,
         executionMode: input.executionMode,
         controlMode: 'auto',
         status: 'running',
@@ -1163,9 +1231,6 @@ export const completeTask = (state: GameState, summary: string, facts: string[])
 
   const nextFacts = Array.from(new Set([...state.task.activeTask.facts, ...facts.filter(Boolean)]));
   const endMinutes = state.task.activeTask.endMinutes;
-  const normalizedEndMinutes = normalizeClockMinutes(endMinutes);
-  const nextHour = Math.floor(normalizedEndMinutes / 60);
-  const nextMinute = normalizedEndMinutes % 60;
 
   return {
     ...state,
@@ -1177,12 +1242,7 @@ export const completeTask = (state: GameState, summary: string, facts: string[])
       isModelMenuOpen: false,
       isStreamSpeedMenuOpen: false
     },
-    clock: {
-      hour: nextHour,
-      minute: nextMinute,
-      timeSlot: resolveTimeSlot(nextHour),
-      label: formatClockLabel(nextHour, nextMinute)
-    },
+    clock: createClockFromTotalMinutes(endMinutes),
     world: {
       ...state.world,
       revision: state.world.revision + 1,

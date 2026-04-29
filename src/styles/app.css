@@ -817,6 +817,24 @@ select:focus-visible {
   color: var(--text);
 }
 
+.task-readonly-value {
+  width: 100%;
+  min-height: 39px;
+  border: 1px solid rgba(155, 181, 198, 0.2);
+  border-radius: var(--radius);
+  padding: 10px 11px;
+  background: rgba(4, 7, 10, 0.72);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+}
+
+.task-duration-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(78px, 0.6fr);
+  gap: 8px;
+}
+
 .input-row textarea {
   min-height: 52px;
   max-height: 86px;

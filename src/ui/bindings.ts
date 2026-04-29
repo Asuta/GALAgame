@@ -59,6 +59,8 @@ import {
   closeSettingsPage,
   completeTask,
   failTaskImageGeneration,
+  formatTaskClockLabel,
+  getClockTotalMinutes,
   finishTaskRequest,
   finishTaskImageGeneration,
   finishTaskStreamingReply,
@@ -164,29 +166,25 @@ const getPlayerStatePrompt = (state: GameState): string => serializePlayerStateF
 const CONTINUE_STORY_PROMPT = '玩家暂时没有回应，只是在等待、观察和感受当前气氛。请根据当前场景自然推进一小段剧情，然后停在等待玩家选择或回应的位置。';
 const STREAM_REVEAL_BOOST_CHARS = 10;
 
-const parseTimeInput = (value: string): number | null => {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-
-  if (!match) {
-    return null;
-  }
-
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-
-  if (hour > 23 || minute > 59) {
-    return null;
-  }
-
-  return hour * 60 + minute;
+const TASK_DURATION_UNIT_MINUTES = {
+  minutes: 1,
+  hours: 60,
+  days: 24 * 60,
+  years: 365 * 24 * 60
 };
 
 const formatTaskTimeLabel = (minutes: number): string => {
-  const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
-  const hour = Math.floor(normalized / 60);
-  const minute = normalized % 60;
+  return formatTaskClockLabel(minutes);
+};
 
-  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+const parsePositiveIntegerInput = (value: string): number | null => {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 };
 
 export const bindUi = (root: HTMLDivElement, initialState = createInitialState()): void => {
@@ -646,8 +644,15 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       return;
     }
 
+    const nextSegmentNumber = task.segments.length + 1;
     const fromMinutes = task.currentMinutes;
-    const toMinutes = Math.min(task.endMinutes, task.currentMinutes + task.segmentMinutes);
+    const toMinutes =
+      nextSegmentNumber >= task.segmentCount
+        ? task.endMinutes
+        : Math.min(
+            task.endMinutes,
+            task.startMinutes + Math.round((task.durationMinutes * nextSegmentNumber) / task.segmentCount)
+          );
     const fromLabel = formatTaskTimeLabel(fromMinutes);
     const toLabel = formatTaskTimeLabel(toMinutes);
 
@@ -705,15 +710,23 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     }
 
     const content = root.querySelector<HTMLTextAreaElement>('[data-task-content]')?.value.trim() ?? '';
-    const startInput = root.querySelector<HTMLInputElement>('[data-task-start-time]')?.value ?? '';
-    const endInput = root.querySelector<HTMLInputElement>('[data-task-end-time]')?.value ?? '';
     const executionMode =
       root.querySelector<HTMLInputElement>('input[name="task-execution-mode"]:checked')?.value === 'process'
         ? 'process'
         : 'result';
-    const segmentMinutes = Number(root.querySelector<HTMLSelectElement>('[data-task-segment-minutes]')?.value ?? 10);
-    const startMinutes = parseTimeInput(startInput);
-    const endMinutesRaw = parseTimeInput(endInput);
+    const durationAmount = parsePositiveIntegerInput(
+      root.querySelector<HTMLInputElement>('[data-task-duration-amount]')?.value ?? ''
+    );
+    const durationUnitValue =
+      root.querySelector<HTMLSelectElement>('[data-task-duration-unit]')?.value ?? 'hours';
+    const durationUnit =
+      durationUnitValue in TASK_DURATION_UNIT_MINUTES
+        ? (durationUnitValue as keyof typeof TASK_DURATION_UNIT_MINUTES)
+        : 'hours';
+    const segmentCount = parsePositiveIntegerInput(
+      root.querySelector<HTMLInputElement>('[data-task-segment-count]')?.value ?? ''
+    );
+    const startMinutes = getClockTotalMinutes(state.clock);
 
     if (!content) {
       state = setTaskError(state, '请先填写任务内容。');
@@ -721,20 +734,32 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       return;
     }
 
-    if (startMinutes === null || endMinutesRaw === null) {
-      state = setTaskError(state, '请填写有效的开始和结束时间。');
+    if (durationAmount === null) {
+      state = setTaskError(state, '请填写有效的持续时间。');
       rerender();
       return;
     }
 
-    const endMinutes = endMinutesRaw <= startMinutes ? endMinutesRaw + 24 * 60 : endMinutesRaw;
+    if (segmentCount === null) {
+      state = setTaskError(state, '请填写有效的过程次数。');
+      rerender();
+      return;
+    }
+
+    const durationMinutes = durationAmount * TASK_DURATION_UNIT_MINUTES[durationUnit];
+
+    if (executionMode === 'process' && segmentCount > durationMinutes) {
+      state = setTaskError(state, '过程次数不能超过总分钟数，否则每段会短于 1 分钟。');
+      rerender();
+      return;
+    }
 
     state = startTask(state, {
       content,
       startMinutes,
-      endMinutes,
       executionMode,
-      segmentMinutes
+      durationMinutes,
+      segmentCount
     });
 
     rerender();

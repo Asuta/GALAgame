@@ -283,9 +283,9 @@ describe('game save bundles', () => {
     const state = startTask(createInitialState(), {
       content: '学习数学',
       startMinutes: 18 * 60,
-      endMinutes: 19 * 60,
       executionMode: 'result',
-      segmentMinutes: 10
+      durationMinutes: 60,
+      segmentCount: 6
     });
 
     expect(isGameStateBusy(state)).toBe(true);

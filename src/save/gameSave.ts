@@ -1,10 +1,10 @@
 import JSZip from 'jszip';
 import { createInitialWorldData } from '../data/world';
-import { createInitialState, type GameState } from '../state/store';
+import { createInitialState, normalizeClockState, type GameState } from '../state/store';
 import { clampStreamCharsPerSecond, type StoredSettings } from '../settings/storage';
 import { normalizePlayerState } from '../player/storage';
 import type { PlayerState } from '../player/types';
-import type { SceneEventSeed, TimeSlot, WorldData } from '../data/types';
+import type { SceneEventSeed, TaskRuntime, TimeSlot, WorldData } from '../data/types';
 import { createStoredMediaUrl, dataUrlToBlob, getStoredMediaKey, isStoredMediaUrl } from './mediaStore';
 import { getExportableVisualAssets } from '../visual/assetCatalog';
 
@@ -134,6 +134,39 @@ const normalizeSettings = (value: unknown, fallback: GameState['settings']): Gam
   };
 };
 
+const normalizeTaskRuntime = (task: TaskRuntime): TaskRuntime => {
+  const startMinutes = Number.isFinite(task.startMinutes) ? Math.max(0, Math.round(task.startMinutes)) : 0;
+  const endMinutesValue = Number.isFinite(task.endMinutes) ? Math.round(task.endMinutes) : startMinutes + 60;
+  const legacySegmentMinutes = Number((task as TaskRuntime & { segmentMinutes?: unknown }).segmentMinutes);
+  const durationMinutes = Number.isFinite(task.durationMinutes)
+    ? Math.max(1, Math.round(task.durationMinutes))
+    : Math.max(1, endMinutesValue - startMinutes);
+  const endMinutes = startMinutes + durationMinutes;
+  const currentMinutes = Number.isFinite(task.currentMinutes)
+    ? Math.min(Math.max(startMinutes, Math.round(task.currentMinutes)), endMinutes)
+    : startMinutes;
+  const segmentCount = Number.isFinite(task.segmentCount)
+    ? Math.max(1, Math.min(durationMinutes, Math.round(task.segmentCount)))
+    : Math.max(
+        1,
+        Math.min(
+          durationMinutes,
+          Number.isFinite(legacySegmentMinutes) && legacySegmentMinutes > 0
+            ? Math.ceil(durationMinutes / Math.round(legacySegmentMinutes))
+            : 5
+        )
+      );
+
+  return {
+    ...task,
+    startMinutes,
+    endMinutes,
+    currentMinutes,
+    durationMinutes,
+    segmentCount
+  };
+};
+
 const sanitizeGameState = (state: GameState): GameState => ({
   ...state,
   ui: {
@@ -157,7 +190,7 @@ const sanitizeGameState = (state: GameState): GameState => ({
     ...state.task,
     activeTask: state.task.activeTask
       ? {
-          ...state.task.activeTask,
+          ...normalizeTaskRuntime(state.task.activeTask),
           imageGeneration: {
             isGenerating: false,
             error: null
@@ -218,10 +251,7 @@ export const normalizeImportedGameState = (
       ...fallback.ui,
       ...(isRecord(incoming.ui) ? incoming.ui : {})
     },
-    clock: {
-      ...fallback.clock,
-      ...(isRecord(incoming.clock) ? incoming.clock : {})
-    },
+    clock: normalizeClockState(isRecord(incoming.clock) ? incoming.clock : fallback.clock),
     world: {
       ...fallback.world,
       ...(isRecord(incoming.world) ? incoming.world : {}),
