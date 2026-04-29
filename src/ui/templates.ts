@@ -45,7 +45,7 @@ const renderDetailList = (label: string, values: string[]): string => `
 const phaseLabels = {
   opening: '开场',
   build_up: '推进',
-  overlimit: '越界',
+  overlimit: '转折',
   resolution: '收束'
 };
 
@@ -887,9 +887,9 @@ export const createAppMarkup = (state: GameState): string => {
                   ${renderDetailRow('事件前提', detailEvent.premise)}
                   ${renderDetailRow('开场状态', detailEvent.openingState)}
                   ${renderDetailRow('推进目标', detailEvent.buildUpGoal)}
-                  ${renderDetailRow('越界触发', detailEvent.overlimitTrigger)}
+                  ${renderDetailRow('关系转折', detailEvent.overlimitTrigger)}
                   ${renderDetailRow('收束方向', detailEvent.resolutionDirection)}
-                  ${renderDetailList('悬念线索', detailEvent.suspenseThreads)}
+                  ${renderDetailList('情绪线索', detailEvent.suspenseThreads)}
                   ${renderDetailList('事实记录', detailEvent.facts)}
                   ${renderDetailList('阶段历史', detailEvent.phaseHistory.map((phase) => phaseLabels[phase]))}
                   ${renderDetailRow('生成时世界版本', String(detailEvent.snapshot.worldRevision))}

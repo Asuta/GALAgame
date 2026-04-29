@@ -3,7 +3,9 @@ import {
   requestCharacterDiscoveries,
   requestEventImagePrompt,
   requestEventTimeSettlement,
+  buildFallbackSceneEventSeed,
   requestGeneratedSceneEvent,
+  requestGeneratedSceneEventSeed,
   requestTaskFinalSummary,
   requestTaskImagePrompt,
   requestTaskManualReplyStream,
@@ -519,11 +521,39 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     rerender();
 
     const locationLabel = resolveLocationLabel(state);
-    const planningScene = {
-      ...scene,
-      eventSeed: selectSceneEventSeed(state, scene)
-    };
+    const selectedSeed = selectSceneEventSeed(state, scene);
     try {
+      let dynamicSeed = buildFallbackSceneEventSeed({
+        scene: {
+          ...scene,
+          eventSeed: selectedSeed
+        },
+        timeLabel: state.clock.label,
+        timeSlot: state.clock.timeSlot
+      });
+
+      try {
+        dynamicSeed = await requestGeneratedSceneEventSeed({
+          model: state.settings.currentModel,
+          scene: {
+            ...scene,
+            eventSeed: selectedSeed
+          },
+          locationLabel,
+          timeLabel: state.clock.label,
+          timeSlot: state.clock.timeSlot,
+          memorySummary: state.memory.summary,
+          memoryFacts: state.memory.facts,
+          playerStatePrompt: getPlayerStatePrompt(state)
+        });
+      } catch {
+        // 动态 seed 是增强步骤；失败时用本地按时间生成的恋爱事件 seed 兜底。
+      }
+
+      const planningScene = {
+        ...scene,
+        eventSeed: dynamicSeed
+      };
       const plannedEvent = await requestGeneratedSceneEvent({
         model: state.settings.currentModel,
         scene: planningScene,

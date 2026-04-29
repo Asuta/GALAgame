@@ -255,11 +255,11 @@ describe('store transitions', () => {
         baseTitle: '训练后的体育馆',
         castIds: ['许夏'],
         tones: ['开阔'],
-        buildUpGoals: ['让玩家注意到新场景里的异常'],
-        triggerHints: ['器材室忽然响了一下'],
+        buildUpGoals: ['让玩家注意到新场景里的暧昧气氛'],
+        triggerHints: ['篮球滚到玩家脚边，有人笑着跑来捡球'],
         resolutionDirections: ['把这一幕收在场馆灯光下'],
         premiseTemplates: ['体育馆里只剩几盏灯亮着。'],
-        suspenseSeeds: ['器材室里是谁']
+        suspenseSeeds: ['玩家要不要顺势聊两句']
       }
     });
     state = upsertCharacter(state, {
@@ -335,6 +335,28 @@ describe('store transitions', () => {
 
     expect(selectedSeed.castIds).toEqual([]);
     expect(selectedSeed.baseTitle).toContain('咖啡店');
+  });
+
+  it('prefers a fallback scene seed when the main seed does not match the current time slot', () => {
+    const classroom = worldData.scenes.find((scene) => scene.id === 'classroom')!;
+    const state = {
+      ...createInitialState(),
+      clock: createClockState(2026, 4, 30, 7, 35)
+    };
+    const selectedSeed = selectSceneEventSeed(state, {
+      ...classroom,
+      eventSeed: {
+        ...classroom.eventSeed,
+        preferredTimeSlots: ['evening']
+      },
+      fallbackEventSeed: {
+        ...classroom.eventSeed,
+        baseTitle: '清晨教室的早读',
+        preferredTimeSlots: ['dawn']
+      }
+    });
+
+    expect(selectedSeed.baseTitle).toBe('清晨教室的早读');
   });
 
   it('advances the world clock by settled event minutes', () => {

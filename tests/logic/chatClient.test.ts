@@ -4,8 +4,10 @@ import {
   buildCharacterDiscoveryRequest,
   buildEventImagePromptRequest,
   buildEventPlanRequest,
+  buildSceneEventSeedRequest,
   buildEventTimeSettlementRequest,
   buildFallbackSceneEvent,
+  buildFallbackSceneEventSeed,
   buildFallbackTimeSettlement,
   buildTaskImagePromptRequest,
   buildTaskManualRequest,
@@ -16,12 +18,14 @@ import {
   parseTaskSettlement,
   parseEventTimeSettlement,
   parsePlannedSceneEvent,
+  parseSceneEventSeed,
   parseSseDelta,
   parseCharacterDiscoveries,
   requestCharacterDiscoveries,
   requestEventImagePrompt,
   requestEventTimeSettlement,
   requestGeneratedSceneEvent,
+  requestGeneratedSceneEventSeed,
   requestStoryReply,
   requestStoryReplyStream,
   requestTaskImagePrompt,
@@ -62,7 +66,8 @@ describe('chatClient helpers', () => {
     expect(payload.messages[1].content).toContain('学校 / 教室');
     expect(payload.messages[1].content).toContain('林澄');
     expect(payload.messages[0].content).toContain('使用“旁白：...”和“角色名：...”这种格式组织内容');
-    expect(payload.messages[0].content).toContain('保持现代恋爱文字冒险的细腻语气');
+    expect(payload.messages[0].content).toContain('保持青春校园恋爱剧的细腻语气');
+    expect(payload.messages[0].content).toContain('不要写露骨色情');
     expect(payload.messages[0].content).toContain('不要代替玩家');
     expect(payload.messages[1].content).toContain('性别：女');
     expect(payload.messages[1].content).toContain('【当前权威角色数据】');
@@ -166,7 +171,7 @@ describe('chatClient helpers', () => {
     expect(payload.messages[1].content).toContain('[EVENT_END]');
   });
 
-  it('builds a planner request that includes time, scene mood, and overlimit trigger guidance', () => {
+  it('builds a planner request that includes time, scene mood, and romance turn guidance', () => {
     const payload = buildEventPlanRequest({
       model: 'gpt-4.1-mini',
       systemPrompt: '你是事件编剧。',
@@ -179,8 +184,64 @@ describe('chatClient helpers', () => {
     });
 
     expect(payload.messages[1].content).toContain('傍晚 18:00');
-    expect(payload.messages[1].content).toContain('超限触发');
+    expect(payload.messages[0].content).toContain('青春校园恋爱剧');
+    expect(payload.messages[1].content).toContain('关系转折候选');
+    expect(payload.messages[1].content).toContain('情绪线索种子');
     expect(payload.messages[1].content).toContain('学校 / 教室');
+  });
+
+  it('builds a dynamic seed request that adapts to the current time', () => {
+    const payload = buildSceneEventSeedRequest({
+      model: 'gpt-4.1-mini',
+      systemPrompt: '你是事件 seed 设计师。',
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      locationLabel: '学校 / 教室',
+      timeLabel: '2026年4月30日 清晨 07:35',
+      timeSlot: 'dawn',
+      memorySummary: '玩家刚到学校。',
+      memoryFacts: []
+    });
+
+    expect(payload.messages[0].content).toContain('动态生成一个当前可用的事件 seed');
+    expect(payload.messages[0].content).toContain('不要照抄场景里的固定旧标题');
+    expect(payload.messages[1].content).toContain('时间段：dawn');
+    expect(payload.messages[1].content).toContain('清晨应是早读、值日、提前到校');
+    expect(payload.messages[1].content).toContain('旧固定标题参考：放学后的空教室');
+  });
+
+  it('parses a dynamic event seed and forces the current time slot', () => {
+    const seed = parseSceneEventSeed({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      timeLabel: '2026年4月30日 清晨 07:35',
+      timeSlot: 'dawn',
+      responseText: JSON.stringify({
+        baseTitle: '清晨教室的并肩早读',
+        castIds: ['林澄'],
+        tones: ['清晨', '暧昧'],
+        buildUpGoals: ['让玩家在早读前和林澄自然靠近'],
+        triggerHints: ['两个人同时伸手去拿练习册'],
+        resolutionDirections: ['收在晨光和没说出口的心动里'],
+        premiseTemplates: ['清晨的教室还没坐满。'],
+        suspenseSeeds: ['她为什么今天来得这么早'],
+        preferredTimeSlots: ['evening']
+      })
+    });
+
+    expect(seed.baseTitle).toBe('清晨教室的并肩早读');
+    expect(seed.preferredTimeSlots).toEqual(['dawn']);
+    expect(seed.premiseTemplates[0]).toContain('清晨');
+  });
+
+  it('builds a time-aware fallback seed when dynamic seed parsing fails', () => {
+    const seed = buildFallbackSceneEventSeed({
+      scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+      timeLabel: '2026年4月30日 清晨 07:35',
+      timeSlot: 'dawn'
+    });
+
+    expect(seed.baseTitle).toContain('教室');
+    expect(seed.baseTitle).not.toContain('放学');
+    expect(seed.preferredTimeSlots).toEqual(['dawn']);
   });
 
   it('parses a JSON planned event response into a runtime event instance', () => {
@@ -192,18 +253,18 @@ describe('chatClient helpers', () => {
       responseText: JSON.stringify({
         title: '放学后的空教室',
         cast: ['林澄'],
-        premise: '放学后的教室里，她像是在等一个不该来的人。',
-        openingState: '她没有立刻看你，只是望着窗外。',
-        buildUpGoal: '让玩家感觉到她今晚有心事。',
-        overlimitTrigger: '对话进行两轮后，门外突然传来急促脚步声。',
-        resolutionDirection: '这一幕先收在心事被打断的悬念里。',
-        suspenseThreads: ['她在等谁', '门外的人是谁']
+        premise: '放学后的教室里，她像是专门把这段时间留给你。',
+        openingState: '她没有立刻看你，只是低头翻着练习册。',
+        buildUpGoal: '让玩家感觉到她今天有话想单独说。',
+        overlimitTrigger: '两个人同时伸手去拿同一本练习册，手指短暂碰到一起。',
+        resolutionDirection: '这一幕先收在脸红和没说出口的邀请里。',
+        suspenseThreads: ['她想单独和玩家说什么', '两个人的距离为什么突然变得这么近']
       })
     });
 
     expect(planned.title).toBe('放学后的空教室');
     expect(planned.currentPhase).toBe('opening');
-    expect(planned.suspenseThreads).toContain('门外的人是谁');
+    expect(planned.suspenseThreads).toContain('两个人的距离为什么突然变得这么近');
   });
 
   it('builds a deterministic fallback event when planner output is missing', () => {
@@ -271,7 +332,7 @@ describe('chatClient helpers', () => {
       model: 'deepseek-chat',
       systemPrompt: '你是任务托管主持人。',
       task,
-      playerInput: '我放慢脚步看看是谁。',
+      playerInput: '我放慢脚步，看她是不是也想多聊一会儿。',
       memorySummary: '故事刚开始。',
       memoryFacts: [],
       locationLabel: '城市'
@@ -286,7 +347,7 @@ describe('chatClient helpers', () => {
     expect(segmentPayload.messages[1].content).toContain('本片段覆盖时长：约 10 分钟');
     expect(segmentPayload.messages[1].content).toContain('06:00 到 06:10');
     expect(manualPayload.stream).toBe(true);
-    expect(manualPayload.messages[1].content).toContain('我放慢脚步看看是谁。');
+    expect(manualPayload.messages[1].content).toContain('我放慢脚步，看她是不是也想多聊一会儿。');
     expect(manualPayload.messages[0].content).toContain('不要把突发情况升级为独立事件');
   });
 
@@ -494,7 +555,7 @@ describe('chatClient helpers', () => {
         '你：今天怎么还没回家？',
         '林澄：我还想再坐一会儿。',
         '你：是不是发生什么事了？',
-        '旁白：门外忽然传来一阵急促脚步声。'
+        '旁白：她低头整理练习册，指尖却迟迟没有从桌沿移开。'
       ],
       eventFacts: ['剧情阶段进入build_up', '剧情阶段进入overlimit', '玩家在学校 / 教室推进了放学后的空教室']
     });
@@ -623,6 +684,47 @@ describe('chatClient helpers', () => {
         memoryFacts: []
       })
     ).resolves.toContain('主题咖啡店');
+  });
+
+  it('requests a dynamic scene event seed from the chat model', async () => {
+    vi.stubEnv('VITE_CHAT_COMPLETIONS_URL', CHAT_ENV.VITE_CHAT_COMPLETIONS_URL);
+    vi.stubEnv('VITE_CHAT_API_KEY', CHAT_ENV.VITE_CHAT_API_KEY);
+    vi.stubEnv('VITE_CHAT_MODEL', CHAT_ENV.VITE_CHAT_MODEL);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content:
+                    '{"baseTitle":"清晨教室的并肩早读","castIds":["林澄"],"tones":["清晨","暧昧"],"buildUpGoals":["让玩家在早读前自然靠近"],"triggerHints":["两个人同时伸手去拿练习册"],"resolutionDirections":["收在晨光和心动里"],"premiseTemplates":["清晨的教室还没坐满。"],"suspenseSeeds":["玩家要不要坐近一点"],"preferredTimeSlots":["morning"]}'
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    );
+
+    await expect(
+      requestGeneratedSceneEventSeed({
+        model: 'deepseek-chat',
+        scene: worldData.scenes.find((scene) => scene.id === 'classroom')!,
+        locationLabel: '学校 / 教室',
+        timeLabel: '2026年4月30日 清晨 07:35',
+        timeSlot: 'dawn',
+        memorySummary: '玩家刚到学校。',
+        memoryFacts: []
+      })
+    ).resolves.toEqual(
+      expect.objectContaining({
+        baseTitle: '清晨教室的并肩早读',
+        preferredTimeSlots: ['dawn']
+      })
+    );
   });
 
   it('requests character discoveries from the chat model', async () => {

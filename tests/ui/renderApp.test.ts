@@ -121,7 +121,7 @@ describe('renderApp', () => {
 
     expect(document.body.textContent).toContain('放学后的空教室');
     expect(document.body.textContent).toContain('她一个人坐在窗边');
-    expect(document.body.textContent).not.toContain('超限触发');
+    expect(document.body.textContent).not.toContain('关系转折');
     expect(document.body.textContent).not.toContain('收束方向');
     expect(document.body.textContent).not.toContain('当前目标');
   });
@@ -424,7 +424,7 @@ describe('renderApp', () => {
     expect(document.body.textContent).toContain('事件前提');
     expect(document.body.textContent).toContain('开场状态');
     expect(document.body.textContent).toContain('推进目标');
-    expect(document.body.textContent).toContain('越界触发');
+    expect(document.body.textContent).toContain('关系转折');
     expect(document.body.textContent).toContain('收束方向');
     expect(document.body.textContent).toContain('生成时记忆事实');
     expect(document.body.textContent).toContain('玩家刚进入教室。');

@@ -433,9 +433,15 @@ export const findCharacterScene = (state: GameState, characterId: string, exclud
 };
 
 export const selectSceneEventSeed = (state: GameState, scene: Scene): SceneEventSeed => {
+  const isTimeSlotPreferred = (seed: SceneEventSeed): boolean =>
+    !seed.preferredTimeSlots?.length || seed.preferredTimeSlots.includes(state.clock.timeSlot);
   const conflictingCast = scene.eventSeed.castIds.find((characterId) => findCharacterScene(state, characterId, scene.id));
 
   if (conflictingCast && scene.fallbackEventSeed) {
+    return scene.fallbackEventSeed;
+  }
+
+  if (!isTimeSlotPreferred(scene.eventSeed) && scene.fallbackEventSeed && isTimeSlotPreferred(scene.fallbackEventSeed)) {
     return scene.fallbackEventSeed;
   }
 
@@ -1544,7 +1550,7 @@ export const getPhaseTitle = (phase: EventPhase): string =>
   ({
     opening: '开场状态',
     build_up: '中段推进',
-    overlimit: '超限触发',
+    overlimit: '关系转折',
     resolution: '收束余波'
   })[phase];
 

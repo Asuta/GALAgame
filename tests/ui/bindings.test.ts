@@ -6,6 +6,7 @@ const {
   requestGeneratedCharacterImageMock,
   requestEventImagePromptMock,
   requestCharacterDiscoveriesMock,
+  requestGeneratedSceneEventSeedMock,
   requestGeneratedSceneEventMock,
   requestStoryReplyStreamMock,
   requestEventTimeSettlementMock,
@@ -20,6 +21,7 @@ const {
   requestGeneratedCharacterImageMock: vi.fn(),
   requestEventImagePromptMock: vi.fn(),
   requestCharacterDiscoveriesMock: vi.fn(),
+  requestGeneratedSceneEventSeedMock: vi.fn(),
   requestGeneratedSceneEventMock: vi.fn(),
   requestStoryReplyStreamMock: vi.fn(),
   requestEventTimeSettlementMock: vi.fn(),
@@ -48,6 +50,7 @@ vi.mock('../../src/logic/chatClient', async () => {
     ...actual,
     requestEventImagePrompt: requestEventImagePromptMock,
     requestCharacterDiscoveries: requestCharacterDiscoveriesMock,
+    requestGeneratedSceneEventSeed: requestGeneratedSceneEventSeedMock,
     requestGeneratedSceneEvent: requestGeneratedSceneEventMock,
     requestStoryReplyStream: requestStoryReplyStreamMock,
     requestEventTimeSettlement: requestEventTimeSettlementMock,
@@ -62,7 +65,7 @@ vi.mock('../../src/logic/chatClient', async () => {
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
 import { bindUi } from '../../src/ui/bindings';
-import { appendTranscriptMessage, createInitialState, startEvent, updateMemory } from '../../src/state/store';
+import { appendTranscriptMessage, createClockState, createInitialState, startEvent, updateMemory } from '../../src/state/store';
 import { exportGameSaveZip } from '../../src/save/gameSave';
 import { loadStoredGameState } from '../../src/save/storage';
 
@@ -160,6 +163,7 @@ describe('bindUi scene switching', () => {
     requestGeneratedCharacterImageMock.mockReset();
     requestEventImagePromptMock.mockReset();
     requestCharacterDiscoveriesMock.mockReset();
+    requestGeneratedSceneEventSeedMock.mockReset();
     requestGeneratedSceneEventMock.mockReset();
     requestStoryReplyStreamMock.mockReset();
     requestEventTimeSettlementMock.mockReset();
@@ -169,6 +173,10 @@ describe('bindUi scene switching', () => {
     requestTaskFinalSummaryMock.mockReset();
     requestTaskImagePromptMock.mockReset();
     requestCharacterDiscoveriesMock.mockResolvedValue([]);
+    requestGeneratedSceneEventSeedMock.mockImplementation(async ({ scene, timeSlot }) => ({
+      ...scene.eventSeed,
+      preferredTimeSlots: [timeSlot]
+    }));
     requestStoryReplyStreamMock.mockImplementation(async function* () {});
     requestTaskManualReplyStreamMock.mockImplementation(async function* () {});
     requestEventTimeSettlementMock.mockResolvedValue({
@@ -229,6 +237,44 @@ describe('bindUi scene switching', () => {
     expect(requestStoryReplyStreamMock).toHaveBeenCalledOnce();
     expect(document.body.textContent).toContain('事件中');
     expect(document.querySelector('[data-action="end-event"]')).not.toBeNull();
+  });
+
+  it('uses a dynamic scene seed that matches the current morning time', async () => {
+    requestGeneratedSceneEventSeedMock.mockResolvedValueOnce({
+      baseTitle: '清晨教室的并肩早读',
+      castIds: ['林澄'],
+      tones: ['清晨', '暧昧'],
+      buildUpGoals: ['让玩家在早读前和林澄自然靠近'],
+      triggerHints: ['两个人同时伸手去拿练习册'],
+      resolutionDirections: ['收在晨光和心动里'],
+      premiseTemplates: ['清晨的教室还没坐满，窗边的晨光落在练习册上。'],
+      suspenseSeeds: ['玩家要不要坐近一点'],
+      preferredTimeSlots: ['dawn']
+    });
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+
+    bindUi(document.querySelector('#app') as HTMLDivElement, {
+      ...createInitialState(),
+      clock: createClockState(2026, 4, 30, 7, 35)
+    });
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(requestGeneratedSceneEventSeedMock).toHaveBeenCalledOnce();
+    expect(requestGeneratedSceneEventMock.mock.calls[0][0].scene.eventSeed.baseTitle).toBe('清晨教室的并肩早读');
+    expect(document.body.textContent).toContain('清晨教室的并肩早读');
+    expect(document.body.textContent).not.toContain('放学后的空教室');
   });
 
   it('collects a new character card when an event ends', async () => {
@@ -791,7 +837,7 @@ describe('bindUi scene switching', () => {
 
   it('runs a global process task through manual takeover and completion', async () => {
     requestTaskManualReplyStreamMock.mockImplementation(async function* () {
-      yield '旁白：你停下来确认那阵脚步声。';
+      yield '旁白：你放慢脚步，确认对方是不是也想多聊一会儿。';
     });
 
     bindUi(document.querySelector('#app') as HTMLDivElement);
@@ -839,10 +885,10 @@ describe('bindUi scene switching', () => {
     (document.querySelector('[data-action="task-manual-mode"]') as HTMLButtonElement).click();
     await flushUi();
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
-    textarea.value = '我放慢脚步看看是谁。';
+    textarea.value = '我放慢脚步，看对方是不是也想多聊一会儿。';
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await flushUi();
-    await waitForText('旁白：你停下来确认那阵脚步声。');
+    await waitForText('旁白：你放慢脚步，确认对方是不是也想多聊一会儿。');
 
     expect(requestTaskManualReplyStreamMock).toHaveBeenCalledOnce();
 

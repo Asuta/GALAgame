@@ -39,7 +39,7 @@ export const summarizeResolvedEvent = ({ event, transcript, memoryFacts }: Event
         ...memoryFacts,
         ...event.facts,
         `你在${event.locationLabel}卷入了一段新的事件`,
-        ...event.suspenseThreads.map((thread) => `悬念：${thread}`)
+        ...event.suspenseThreads.map((thread) => `情绪线索：${thread}`)
       ])
     )
   };

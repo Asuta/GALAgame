@@ -52,6 +52,18 @@ export interface BuildEventPlanRequestInput {
   playerStatePrompt?: string;
 }
 
+export interface BuildSceneEventSeedRequestInput {
+  model: string;
+  systemPrompt: string;
+  scene: Scene;
+  locationLabel: string;
+  timeLabel: string;
+  timeSlot: TimeSlot;
+  memorySummary: string;
+  memoryFacts: string[];
+  playerStatePrompt?: string;
+}
+
 export interface ParsePlannedSceneEventInput {
   scene: Scene;
   locationLabel: string;
@@ -340,6 +352,11 @@ const readStringArray = (value: unknown): string[] =>
         .filter(Boolean)
     : [];
 
+const TIME_SLOTS: TimeSlot[] = ['dawn', 'morning', 'afternoon', 'evening', 'night', 'late_night'];
+
+const readTimeSlotArray = (value: unknown): TimeSlot[] =>
+  readStringArray(value).filter((slot): slot is TimeSlot => TIME_SLOTS.includes(slot as TimeSlot));
+
 const normalizeAttributeKey = (value: unknown): keyof PlayerAttributes | null => {
   if (typeof value !== 'string') {
     return null;
@@ -587,8 +604,9 @@ export const buildChatRequest = ({
         '2. 每次回复控制在当前场景的小推进内，结尾要停在等待玩家回应的位置。',
         '3. 不要代替玩家说话、行动或做决定。',
         '4. 不要跳出当前地点，不要突然切换到别的场景。',
-        '5. 保持现代恋爱文字冒险的细腻语气。',
-        '6. 当前事件是一个有结构的现场剧情，你要沿着当前阶段推进，而不是随意散开。'
+        '5. 保持青春校园恋爱剧的细腻语气，重点写心动、害羞、吃醋、试探、靠近与关系变化。',
+        '6. 当前事件是一个有结构的现场剧情，你要沿着当前阶段推进，而不是随意散开。',
+        '7. 可以写轻微荷尔蒙感、暧昧距离、脸红、呼吸和触碰边缘，但不要写露骨色情、性行为或未成年人不当性内容。'
       ].join('\n')
     },
     {
@@ -599,8 +617,8 @@ export const buildChatRequest = ({
         `角色：${castName}`,
         `事件阶段：${eventPhase}`,
         `当前阶段目标：${phaseGoal ?? '沿着当前气氛自然推进这一幕'}`,
-        `超限触发：${overlimitTrigger ?? '暂无，继续推进当前气氛即可'}`,
-        `悬念线程：${suspenseThreads.length ? suspenseThreads.join('；') : '暂无'}`,
+        `关系转折：${overlimitTrigger ?? '暂无，继续推进当前暧昧气氛即可'}`,
+        `情绪线索：${suspenseThreads.length ? suspenseThreads.join('；') : '暂无'}`,
         `角色设定：\n${characterProfile}`,
         `局势摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
@@ -633,11 +651,14 @@ export const buildEventPlanRequest = ({
       role: 'system',
       content: [
         systemPrompt,
-        '你负责为当前场景规划一个半分段事件。',
+        '你负责为当前场景规划一个青春校园恋爱剧事件。',
         '请输出 JSON 对象，不要添加代码块。',
         '必须包含字段：title, cast, premise, openingState, buildUpGoal, overlimitTrigger, resolutionDirection, suspenseThreads。',
+        '注意：overlimitTrigger 和 suspenseThreads 是兼容旧存档的字段名；实际语义分别是“关系转折”和“情绪线索”，不要理解成危险事件或悬疑线索。',
         '这个事件不是整局主线，只是当前场景的一次剧情实例。',
-        '剧情必须包含“开场状态 -> 中段推进 -> 超限触发 -> 收束方向”的骨架。'
+        '剧情必须包含“开场状态 -> 中段推进 -> 关系转折 -> 收束方向”的骨架。',
+        '基调应是青春、心动、暧昧、拉扯、校园剧式日常，不要写成悬疑、惊悚、犯罪或谜题。',
+        '可以有轻微荷尔蒙和暧昧身体距离，但不要写露骨色情、性行为或未成年人不当性内容。'
       ].join('\n')
     },
     {
@@ -651,13 +672,63 @@ export const buildEventPlanRequest = ({
         `可出场角色：${scene.eventSeed.castIds.length ? scene.eventSeed.castIds.join('、') : '无固定角色'}`,
         `氛围关键词：${scene.eventSeed.tones.join('、')}`,
         `中段推进方向：${scene.eventSeed.buildUpGoals.join('；')}`,
-        `超限触发候选：${scene.eventSeed.triggerHints.join('；')}`,
+        `关系转折候选：${scene.eventSeed.triggerHints.join('；')}`,
         `收束方向候选：${scene.eventSeed.resolutionDirections.join('；')}`,
-        `悬念种子：${scene.eventSeed.suspenseSeeds.join('；')}`,
+        `情绪线索种子：${scene.eventSeed.suspenseSeeds.join('；')}`,
         `当前记忆摘要：${memorySummary}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
         ...withPlayerStatePrompt(playerStatePrompt),
-        '请基于以上上下文生成一个当前场景可用的事件骨架。超限触发必须明确，且不要把结局写死成成功或失败。'
+        '请基于以上上下文生成一个当前场景可用的恋爱事件骨架。关系转折必须明确，且不要把结局写死成成功或失败。'
+      ].join('\n')
+    }
+  ]
+});
+
+export const buildSceneEventSeedRequest = ({
+  model,
+  systemPrompt,
+  scene,
+  locationLabel,
+  timeLabel,
+  timeSlot,
+  memorySummary,
+  memoryFacts,
+  playerStatePrompt
+}: BuildSceneEventSeedRequestInput): ChatRequestPayload => ({
+  model,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        systemPrompt,
+        '你负责在玩家进入场景时，先动态生成一个当前可用的事件 seed。',
+        '请输出 JSON 对象，不要添加代码块。',
+        '必须包含字段：baseTitle, castIds, tones, buildUpGoals, triggerHints, resolutionDirections, premiseTemplates, suspenseSeeds, preferredTimeSlots。',
+        'seed 不是完整剧情，而是给下一步事件规划使用的素材包。',
+        '必须根据当前日期时间、时间段、地点、世界记忆和角色状态生成，不要照抄场景里的固定旧标题。',
+        '基调应是青春校园恋爱剧：心动、暧昧、拉扯、吃醋、害羞、靠近、日常约会感。',
+        '可以有轻微荷尔蒙和暧昧身体距离，但不要写露骨色情、性行为或未成年人不当性内容。',
+        '不要写成悬疑、惊悚、犯罪、谜题或危险事件。'
+      ].join('\n')
+    },
+    {
+      role: 'user',
+      content: [
+        `地点：${locationLabel}`,
+        `当前时间：${timeLabel}`,
+        `时间段：${timeSlot}`,
+        `场景名称：${scene.name}`,
+        `场景描述：${scene.description}`,
+        `候选角色：${scene.eventSeed.castIds.length ? scene.eventSeed.castIds.join('、') : '无固定角色'}`,
+        `旧固定标题参考：${scene.eventSeed.baseTitle}`,
+        `旧氛围参考：${scene.eventSeed.tones.join('、')}`,
+        `当前记忆摘要：${memorySummary || '暂无'}`,
+        `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
+        '请生成一个和当前时间强匹配的 seed。比如清晨应是早读、值日、提前到校、晨光、同桌距离；傍晚才可以是放学后；夜晚才可以是深夜消息或夜风。',
+        'preferredTimeSlots 必须包含当前 timeSlot，且不要包含明显不适合这个 seed 的时间段。',
+        'triggerHints 字段语义是“关系转折候选”，suspenseSeeds 字段语义是“情绪线索种子”。',
+        '输出示例：{"baseTitle":"清晨教室的并肩早读","castIds":["林澄"],"tones":["清晨","暧昧","青春感"],"buildUpGoals":["让玩家在早读前和林澄自然靠近"],"triggerHints":["两个人同时伸手去拿同一本练习册，指尖短暂碰到"],"resolutionDirections":["把这一幕收在晨光和没说出口的心动里"],"premiseTemplates":["清晨的教室还没坐满，窗边的晨光落在摊开的练习册上。"],"suspenseSeeds":["她为什么今天来得这么早","玩家要不要顺势坐近一点"],"preferredTimeSlots":["morning"]}'
       ].join('\n')
     }
   ]
@@ -718,9 +789,9 @@ export const buildFallbackSceneEvent = ({
 }: BuildFallbackSceneEventInput): GeneratedEvent => {
   const cast = scene.eventSeed.castIds.slice(0, 2);
   const premise = scene.eventSeed.premiseTemplates[0] ?? scene.description;
-  const buildUpGoal = scene.eventSeed.buildUpGoals[0] ?? '让玩家逐渐察觉场上还有别的隐情。';
-  const overlimitTrigger = scene.eventSeed.triggerHints[0] ?? '环境里突然出现一个会打破平静的人。';
-  const resolutionDirection = scene.eventSeed.resolutionDirections[0] ?? '把这一幕收在带余波的沉默里。';
+  const buildUpGoal = scene.eventSeed.buildUpGoals[0] ?? '让玩家逐渐察觉关系里正在升温的暧昧。';
+  const overlimitTrigger = scene.eventSeed.triggerHints[0] ?? '一次意外靠近让两个人都意识到距离变了。';
+  const resolutionDirection = scene.eventSeed.resolutionDirections[0] ?? '把这一幕收在心动和未说出口的话里。';
   const suspenseThreads = scene.eventSeed.suspenseSeeds.slice(0, 2);
 
   return {
@@ -752,6 +823,86 @@ export const buildFallbackSceneEvent = ({
       memoryFacts
     },
     turnCount: 0
+  };
+};
+
+export const buildFallbackSceneEventSeed = ({
+  scene,
+  timeLabel,
+  timeSlot
+}: {
+  scene: Scene;
+  timeLabel: string;
+  timeSlot: TimeSlot;
+}): Scene['eventSeed'] => {
+  const timeSceneLabels: Record<TimeSlot, string> = {
+    dawn: `黎明${scene.name}的早到`,
+    morning: `清晨${scene.name}的相遇`,
+    afternoon: `午后${scene.name}的靠近`,
+    evening: `傍晚${scene.name}的心动`,
+    night: `夜里${scene.name}的低声聊天`,
+    late_night: `深夜${scene.name}的未眠消息`
+  };
+  const timePremises: Record<TimeSlot, string> = {
+    dawn: `${timeLabel}的${scene.name}还很安静，天光刚刚亮起来。`,
+    morning: `${timeLabel}的${scene.name}带着刚开始一天的清爽气息。`,
+    afternoon: `${timeLabel}的${scene.name}有些松弛，适合把话说得轻一点。`,
+    evening: `${timeLabel}的${scene.name}被傍晚光线染得柔和。`,
+    night: `${timeLabel}的${scene.name}安静下来，声音也自然压低。`,
+    late_night: `${timeLabel}的${scene.name}只剩下很轻的动静，适合藏住一句真心话。`
+  };
+
+  return {
+    baseTitle: timeSceneLabels[timeSlot],
+    castIds: scene.eventSeed.castIds.slice(0, 2),
+    tones: ['青春感', '暧昧', '心动', timeSlot === 'morning' || timeSlot === 'dawn' ? '清爽' : '柔软'],
+    buildUpGoals: ['让玩家在当前时间和地点里自然遇到一段恋爱向小事件', '让角色之间的距离在日常细节里变近'],
+    triggerHints: ['一次意外靠近让两个人都意识到气氛变了', '一句随口的关心让对方短暂脸红'],
+    resolutionDirections: ['把这一幕收在心动和未说出口的话里', '让玩家带着一点想继续相处的余韵离开'],
+    premiseTemplates: [timePremises[timeSlot]],
+    suspenseSeeds: ['这份靠近是不是只有玩家注意到了', '玩家要不要主动多停留一会儿'],
+    preferredTimeSlots: [timeSlot]
+  };
+};
+
+export const parseSceneEventSeed = ({
+  scene,
+  timeLabel,
+  timeSlot,
+  responseText
+}: {
+  scene: Scene;
+  timeLabel: string;
+  timeSlot: TimeSlot;
+  responseText: string;
+}): Scene['eventSeed'] => {
+  const fallback = buildFallbackSceneEventSeed({ scene, timeLabel, timeSlot });
+  const jsonText = extractJsonObject(responseText);
+
+  if (!jsonText) {
+    return fallback;
+  }
+
+  const parsed = JSON.parse(jsonText) as Partial<Scene['eventSeed']>;
+  const preferredTimeSlots = readTimeSlotArray(parsed.preferredTimeSlots);
+  const castIds = readStringArray(parsed.castIds).slice(0, 2);
+  const tones = readStringArray(parsed.tones);
+  const buildUpGoals = readStringArray(parsed.buildUpGoals);
+  const triggerHints = readStringArray(parsed.triggerHints);
+  const resolutionDirections = readStringArray(parsed.resolutionDirections);
+  const premiseTemplates = readStringArray(parsed.premiseTemplates);
+  const suspenseSeeds = readStringArray(parsed.suspenseSeeds);
+
+  return {
+    baseTitle: parsed.baseTitle?.trim() || fallback.baseTitle,
+    castIds: castIds.length ? castIds : fallback.castIds,
+    tones: tones.length ? tones : fallback.tones,
+    buildUpGoals: buildUpGoals.length ? buildUpGoals : fallback.buildUpGoals,
+    triggerHints: triggerHints.length ? triggerHints : fallback.triggerHints,
+    resolutionDirections: resolutionDirections.length ? resolutionDirections : fallback.resolutionDirections,
+    premiseTemplates: premiseTemplates.length ? premiseTemplates : fallback.premiseTemplates,
+    suspenseSeeds: suspenseSeeds.length ? suspenseSeeds : fallback.suspenseSeeds,
+    preferredTimeSlots: preferredTimeSlots.includes(timeSlot) ? preferredTimeSlots : [timeSlot]
   };
 };
 
@@ -1171,9 +1322,9 @@ export const parsePlannedSceneEvent = ({
     openingState:
       parsed.openingState?.trim() || `${timeLabel}的${scene.name}里，${scene.eventSeed.premiseTemplates[0] || scene.description}`,
     buildUpGoal: parsed.buildUpGoal?.trim() || scene.eventSeed.buildUpGoals[0] || '让这一幕逐渐升温。',
-    overlimitTrigger: parsed.overlimitTrigger?.trim() || scene.eventSeed.triggerHints[0] || '平静突然被外部事件打断。',
+    overlimitTrigger: parsed.overlimitTrigger?.trim() || scene.eventSeed.triggerHints[0] || '一次意外靠近让暧昧变得更明显。',
     resolutionDirection:
-      parsed.resolutionDirection?.trim() || scene.eventSeed.resolutionDirections[0] || '把局势收在悬念仍未消散的位置。',
+      parsed.resolutionDirection?.trim() || scene.eventSeed.resolutionDirections[0] || '把这一幕收在心动和未说出口的话里。',
     suspenseThreads:
       parsed.suspenseThreads?.map((thread) => thread.trim()).filter(Boolean) || scene.eventSeed.suspenseSeeds.slice(0, 2)
   };
@@ -1583,6 +1734,39 @@ export const requestGeneratedSceneEvent = async (
     timeSlot: input.timeSlot,
     responseText: text,
     worldRevision: input.worldRevision
+  });
+};
+
+export const requestGeneratedSceneEventSeed = async (
+  input: Omit<BuildSceneEventSeedRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
+): Promise<Scene['eventSeed']> => {
+  const config = getChatRuntimeConfig();
+  const payload = buildSceneEventSeedRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是青春校园恋爱游戏的事件 seed 设计师。'
+  });
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`事件 seed 生成失败：${response.status}`);
+  }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+
+  return parseSceneEventSeed({
+    scene: input.scene,
+    timeLabel: input.timeLabel,
+    timeSlot: input.timeSlot,
+    responseText: extractAssistantReply(data)
   });
 };
 
