@@ -1,4 +1,4 @@
-import type { EventPhase, GeneratedEvent, Scene, TaskRuntime, TaskSegment, TimeSlot } from '../data/types';
+import type { CharacterProfile, EventPhase, GeneratedEvent, Scene, TaskRuntime, TaskSegment, TimeSlot } from '../data/types';
 import type { GameEffect, PlayerAcademics, PlayerAttributes } from '../player/types';
 
 export interface ChatMessage {
@@ -174,6 +174,39 @@ export interface BuildTaskImagePromptRequestInput {
   playerStatePrompt?: string;
 }
 
+export interface CharacterDiscovery {
+  name: string;
+  aliases: string[];
+  gender: string;
+  identity: string;
+  age: string;
+  personality: string;
+  speakingStyle: string;
+  relationshipToPlayer: string;
+  appearance: string;
+  currentLook: string;
+  knownFacts: string[];
+  hardRules: string[];
+  shouldPersist: boolean;
+  confidence: number;
+  existingCharacterId?: string;
+  persistenceReason?: string;
+}
+
+export interface BuildCharacterDiscoveryRequestInput {
+  model: string;
+  systemPrompt: string;
+  contextType: 'event' | 'task';
+  title: string;
+  locationLabel: string;
+  timeLabel: string;
+  summary: string;
+  transcript: string[];
+  facts: string[];
+  existingCharacters: CharacterProfile[];
+  playerStatePrompt?: string;
+}
+
 const formatTaskDurationForPrompt = (minutes: number): string => {
   const rounded = Math.max(1, Math.round(minutes));
   const dayMinutes = 24 * 60;
@@ -298,6 +331,14 @@ const readTextId = (value: unknown): string | null => {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 };
+
+const readStringArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
 
 const normalizeAttributeKey = (value: unknown): keyof PlayerAttributes | null => {
   if (typeof value !== 'string') {
@@ -1007,6 +1048,71 @@ export const buildTaskImagePromptRequest = ({
   ]
 });
 
+export const buildCharacterDiscoveryRequest = ({
+  model,
+  systemPrompt,
+  contextType,
+  title,
+  locationLabel,
+  timeLabel,
+  summary,
+  transcript,
+  facts,
+  existingCharacters,
+  playerStatePrompt
+}: BuildCharacterDiscoveryRequestInput): ChatRequestPayload => ({
+  model,
+  messages: [
+    {
+      role: 'system',
+      content: [
+        systemPrompt,
+        '你负责在事件或任务结束后，从上下文里提取值得持久化的新人物卡。',
+        '请输出 JSON 对象，不要添加代码块。',
+        '必须包含字段：characters，值为数组。',
+        '每个 characters 项必须包含：name, shouldPersist, confidence, gender, identity, age, personality, speakingStyle, relationshipToPlayer, appearance, currentLook, knownFacts, hardRules。',
+        '只有有明确名字或稳定称呼、性格或身份有区分度、后续可能再次出现的人物才 shouldPersist=true。',
+        '无名路人、群众、临时服务员、纯称谓 NPC、只在比喻中出现的人物必须 shouldPersist=false。',
+        '如果人物明显对应已有角色，请填 existingCharacterId，不要创建重复人物。',
+        'appearance/currentLook 要能直接服务于后续人物立绘生成。'
+      ].join('\n')
+    },
+    {
+      role: 'user',
+      content: [
+        `上下文类型：${contextType === 'event' ? '事件' : '任务'}`,
+        `标题：${title}`,
+        `地点：${locationLabel}`,
+        `时间：${timeLabel}`,
+        `结算摘要：${summary || '暂无'}`,
+        `本次事实：${facts.length ? facts.join('；') : '暂无'}`,
+        `已有角色：${
+          existingCharacters.length
+            ? existingCharacters
+                .map((character) =>
+                  [
+                    `id=${character.id}`,
+                    `name=${character.name}`,
+                    character.aliases?.length ? `aliases=${character.aliases.join('/')}` : '',
+                    `identity=${character.identity}`,
+                    `relationship=${character.relationshipToPlayer}`
+                  ]
+                    .filter(Boolean)
+                    .join(', ')
+                )
+                .join('\n')
+            : '暂无'
+        }`,
+        `原始过程：\n${transcript.length ? transcript.join('\n') : '暂无'}`,
+        ...withPlayerStatePrompt(playerStatePrompt),
+        '请回顾本次上下文中玩家实际遇到、对话或互动过的人物。',
+        '如果没有值得持久化的新人物，返回 {"characters":[]}。',
+        '输出示例：{"characters":[{"name":"许夏","aliases":[],"shouldPersist":true,"confidence":0.86,"gender":"女","identity":"体育馆里遇到的高年级学生","age":"18岁左右","personality":"直接、热情、有竞争心","speakingStyle":"短句，带一点挑衅但不恶意","relationshipToPlayer":"刚认识","appearance":"短发，运动外套，神情爽朗","currentLook":"训练后站在体育馆灯光下，额前有汗，穿运动外套","knownFacts":["在体育馆训练","主动和玩家搭话"],"hardRules":["不要改成阴郁反派","保持运动系气质"],"persistenceReason":"有名字、外貌和明确互动，适合后续再出现"}]}'
+      ].join('\n')
+    }
+  ]
+});
+
 export const buildFallbackTimeSettlement = ({
   transcript,
   eventFacts
@@ -1112,6 +1218,54 @@ export const parseTaskSettlement = (responseText: string): TaskSettlement => {
     facts,
     effects: effects.length ? effects : inferSettlementEffects(summary, facts)
   };
+};
+
+export const parseCharacterDiscoveries = (responseText: string): CharacterDiscovery[] => {
+  const jsonText = extractJsonObject(responseText);
+
+  if (!jsonText) {
+    return [];
+  }
+
+  const parsed = JSON.parse(jsonText) as { characters?: unknown };
+
+  if (!Array.isArray(parsed.characters)) {
+    return [];
+  }
+
+  return parsed.characters.filter(isRecord).flatMap((item): CharacterDiscovery[] => {
+    const name = readTextId(item.name);
+
+    if (!name) {
+      return [];
+    }
+
+    const confidence =
+      typeof item.confidence === 'number' && Number.isFinite(item.confidence)
+        ? Math.max(0, Math.min(1, item.confidence))
+        : 0;
+
+    return [
+      {
+        name,
+        aliases: readStringArray(item.aliases),
+        gender: readTextId(item.gender) ?? '未知',
+        identity: readTextId(item.identity) ?? '新认识的人物',
+        age: readTextId(item.age) ?? '未知',
+        personality: readTextId(item.personality) ?? '仍在观察中',
+        speakingStyle: readTextId(item.speakingStyle) ?? '普通自然的说话方式',
+        relationshipToPlayer: readTextId(item.relationshipToPlayer) ?? '刚认识',
+        appearance: readTextId(item.appearance) ?? '外貌细节仍不明确',
+        currentLook: readTextId(item.currentLook) ?? readTextId(item.appearance) ?? '当前样貌仍不明确',
+        knownFacts: readStringArray(item.knownFacts),
+        hardRules: readStringArray(item.hardRules),
+        shouldPersist: item.shouldPersist === true,
+        confidence,
+        existingCharacterId: readTextId(item.existingCharacterId) ?? undefined,
+        persistenceReason: readTextId(item.persistenceReason) ?? undefined
+      }
+    ];
+  });
 };
 
 export const parseTaskSegment = ({
@@ -1336,6 +1490,33 @@ export const requestTaskImagePrompt = async (
 
   const data = (await response.json()) as ChatCompletionResponse;
   return extractAssistantReply(data);
+};
+
+export const requestCharacterDiscoveries = async (
+  input: Omit<BuildCharacterDiscoveryRequestInput, 'model' | 'systemPrompt'> & { model?: string; systemPrompt?: string }
+): Promise<CharacterDiscovery[]> => {
+  const config = getChatRuntimeConfig();
+  const payload = buildCharacterDiscoveryRequest({
+    ...input,
+    model: input.model ?? config.model,
+    systemPrompt: input.systemPrompt ?? '你是视觉小说游戏的人物档案整理员。'
+  });
+
+  const response = await fetch(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`人物信息收集失败：${response.status}`);
+  }
+
+  const data = (await response.json()) as ChatCompletionResponse;
+  return parseCharacterDiscoveries(extractAssistantReply(data));
 };
 
 export const requestStoryReply = async (

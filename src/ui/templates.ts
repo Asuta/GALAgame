@@ -610,6 +610,57 @@ export const createAppMarkup = (state: GameState): string => {
   }
 
   if (state.ui.currentPage === 'character') {
+    const characterCards = state.world.data.characters.length
+      ? state.world.data.characters
+          .map((character) => {
+            const sourceLabel = character.source === 'runtime_generated' ? '新遇见' : '原版';
+            const knownFacts = character.knownFacts?.length
+              ? character.knownFacts.slice(-4).map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')
+              : '<span>还没有更多记录</span>';
+
+            return `
+              <article class="character-profile-card" data-testid="character-profile-card">
+                <div class="character-profile-image">
+                  ${
+                    character.imageUrl
+                      ? `<img ${renderImageSourceAttributes(character.imageUrl)} alt="${escapeHtml(character.name)}的人物立绘" />`
+                      : `<div class="character-profile-placeholder" aria-label="${escapeHtml(character.name)}暂无立绘">${escapeHtml(character.name.slice(0, 2))}</div>`
+                  }
+                </div>
+                <div class="character-profile-body">
+                  <div class="character-profile-kicker">
+                    <span>${escapeHtml(sourceLabel)}</span>
+                    <span>${escapeHtml(character.lastSeenAt ?? character.firstMetAt ?? '时间未记录')}</span>
+                  </div>
+                  <h2>${escapeHtml(character.name)}</h2>
+                  <p class="character-profile-identity">${escapeHtml(character.identity)}</p>
+                  <dl class="character-profile-meta">
+                    <div>
+                      <dt>关系</dt>
+                      <dd>${escapeHtml(character.relationshipToPlayer || '暂无')}</dd>
+                    </div>
+                    <div>
+                      <dt>初遇</dt>
+                      <dd>${escapeHtml(character.firstMetLocation ?? '未知地点')}</dd>
+                    </div>
+                    <div>
+                      <dt>性格</dt>
+                      <dd>${escapeHtml(character.personality || '仍在观察中')}</dd>
+                    </div>
+                    <div>
+                      <dt>样貌</dt>
+                      <dd>${escapeHtml(character.currentLook ?? character.appearance ?? '还没有稳定记录')}</dd>
+                    </div>
+                  </dl>
+                  <div class="character-fact-list">
+                    ${knownFacts}
+                  </div>
+                </div>
+              </article>
+            `;
+          })
+          .join('')
+      : '<div class="settings-card event-detail-empty"><h2>还没有人物卡</h2><p>事件或任务结束后，值得保留的新角色会出现在这里。</p></div>';
     const statGroupCards = state.player.statGroups
       .map(
         (group) => `
@@ -690,10 +741,23 @@ export const createAppMarkup = (state: GameState): string => {
             <button class="settings-back-button" data-action="back-to-game" aria-label="返回游戏">←</button>
             <div>
               <p>当前权威数据</p>
-              <h1>主角状态</h1>
+              <h1>人物档案</h1>
             </div>
           </header>
           <div class="settings-scroll-content settings-panel-scroll">
+            <section class="character-gallery-section" aria-label="人物图鉴">
+              <div class="settings-section-heading character-gallery-heading">
+                <strong>人物图鉴</strong>
+                <span>${state.world.data.characters.length} 张人物卡</span>
+              </div>
+              <div class="character-profile-list">
+                ${characterCards}
+              </div>
+            </section>
+            <div class="settings-section-heading character-player-heading">
+              <strong>主角状态</strong>
+              <span>属性与背包</span>
+            </div>
             <div class="settings-card player-money-card">
               <span>当前资产</span>
               <strong>${escapeHtml(String(state.player.money))}</strong>

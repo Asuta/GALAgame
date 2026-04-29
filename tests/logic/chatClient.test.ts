@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildChatRequest,
+  buildCharacterDiscoveryRequest,
   buildEventImagePromptRequest,
   buildEventPlanRequest,
   buildEventTimeSettlementRequest,
@@ -16,6 +17,8 @@ import {
   parseEventTimeSettlement,
   parsePlannedSceneEvent,
   parseSseDelta,
+  parseCharacterDiscoveries,
+  requestCharacterDiscoveries,
   requestEventImagePrompt,
   requestEventTimeSettlement,
   requestGeneratedSceneEvent,
@@ -366,6 +369,46 @@ describe('chatClient helpers', () => {
     expect(payload.messages[1].content).toContain('长度控制在 300 字以内');
   });
 
+  it('builds a character discovery request with existing character context', () => {
+    const payload = buildCharacterDiscoveryRequest({
+      model: 'deepseek-chat',
+      systemPrompt: '你是人物档案整理员。',
+      contextType: 'task',
+      title: '电影院的偶遇',
+      locationLabel: '城市 / 电影院',
+      timeLabel: '2026年4月29日 晚上 20:00',
+      summary: '玩家在电影院门口遇到了沈听。',
+      transcript: ['旁白：沈听帮你捡起票根。', '沈听：这个是你掉的吗？'],
+      facts: ['沈听帮玩家捡起票根'],
+      existingCharacters: worldData.characters,
+      playerStatePrompt: '【当前权威角色数据】\n金钱：100'
+    });
+
+    expect(payload.messages[0].content).toContain('提取值得持久化的新人物卡');
+    expect(payload.messages[0].content).toContain('无名路人');
+    expect(payload.messages[1].content).toContain('上下文类型：任务');
+    expect(payload.messages[1].content).toContain('电影院的偶遇');
+    expect(payload.messages[1].content).toContain('id=林澄');
+    expect(payload.messages[1].content).toContain('沈听帮你捡起票根');
+    expect(payload.messages[1].content).toContain('【当前权威角色数据】');
+  });
+
+  it('parses character discoveries and ignores nameless entries', () => {
+    const discoveries = parseCharacterDiscoveries(
+      '{"characters":[{"name":"沈听","aliases":["电影院女生"],"shouldPersist":true,"confidence":1.4,"gender":"女","identity":"电影院门口遇到的同龄女生","age":"17岁左右","personality":"温和、细心","speakingStyle":"语气轻","relationshipToPlayer":"刚认识","appearance":"浅色外套，短发","currentLook":"站在电影院门口","knownFacts":["帮玩家捡起票根"],"hardRules":["保持温和"],"existingCharacterId":"","persistenceReason":"有名字和互动"},{"name":" ","shouldPersist":true}]}'
+    );
+
+    expect(discoveries).toHaveLength(1);
+    expect(discoveries[0]).toMatchObject({
+      name: '沈听',
+      aliases: ['电影院女生'],
+      shouldPersist: true,
+      confidence: 1,
+      currentLook: '站在电影院门口',
+      knownFacts: ['帮玩家捡起票根']
+    });
+  });
+
   it('parses task settlement and process segment responses', () => {
     let state = createInitialState();
     state = startTask(state, {
@@ -580,6 +623,50 @@ describe('chatClient helpers', () => {
         memoryFacts: []
       })
     ).resolves.toContain('主题咖啡店');
+  });
+
+  it('requests character discoveries from the chat model', async () => {
+    vi.stubEnv('VITE_CHAT_COMPLETIONS_URL', CHAT_ENV.VITE_CHAT_COMPLETIONS_URL);
+    vi.stubEnv('VITE_CHAT_API_KEY', CHAT_ENV.VITE_CHAT_API_KEY);
+    vi.stubEnv('VITE_CHAT_MODEL', CHAT_ENV.VITE_CHAT_MODEL);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content:
+                    '{"characters":[{"name":"沈听","aliases":[],"shouldPersist":true,"confidence":0.86,"gender":"女","identity":"电影院门口遇到的同龄女生","age":"17岁左右","personality":"温和、细心","speakingStyle":"语气轻","relationshipToPlayer":"刚认识","appearance":"浅色外套，短发","currentLook":"站在电影院灯牌下","knownFacts":["帮玩家捡起票根"],"hardRules":["保持温和"]}]}'
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    );
+
+    await expect(
+      requestCharacterDiscoveries({
+        model: 'deepseek-chat',
+        contextType: 'task',
+        title: '电影院的偶遇',
+        locationLabel: '城市 / 电影院',
+        timeLabel: '2026年4月29日 晚上 20:00',
+        summary: '玩家在电影院门口遇到了沈听。',
+        transcript: ['沈听：这个是你掉的吗？'],
+        facts: ['沈听帮玩家捡起票根'],
+        existingCharacters: worldData.characters
+      })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        name: '沈听',
+        shouldPersist: true,
+        confidence: 0.86
+      })
+    ]);
   });
 
   it('throws when streaming reply request fails', async () => {

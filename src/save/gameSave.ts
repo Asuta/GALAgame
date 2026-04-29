@@ -4,7 +4,7 @@ import { createInitialState, normalizeClockState, type GameState } from '../stat
 import { clampStreamCharsPerSecond, type StoredSettings } from '../settings/storage';
 import { normalizePlayerState } from '../player/storage';
 import type { PlayerState } from '../player/types';
-import type { SceneEventSeed, TaskRuntime, TimeSlot, WorldData } from '../data/types';
+import type { CharacterProfile, SceneEventSeed, TaskRuntime, TimeSlot, WorldData } from '../data/types';
 import { createStoredMediaUrl, dataUrlToBlob, getStoredMediaKey, isStoredMediaUrl } from './mediaStore';
 import { getExportableVisualAssets } from '../visual/assetCatalog';
 
@@ -47,11 +47,35 @@ const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string');
 
+const hydrateCharacterFromBaseline = (character: CharacterProfile, baseline: CharacterProfile | undefined): CharacterProfile => {
+  if (!baseline) {
+    return character;
+  }
+
+  return {
+    ...baseline,
+    ...character,
+    aliases: character.aliases ?? baseline.aliases,
+    hardRules: character.hardRules.length ? character.hardRules : baseline.hardRules,
+    appearance: character.appearance ?? baseline.appearance,
+    currentLook: character.currentLook ?? baseline.currentLook,
+    knownFacts: character.knownFacts ?? baseline.knownFacts,
+    firstMetAt: character.firstMetAt ?? baseline.firstMetAt,
+    lastSeenAt: character.lastSeenAt ?? baseline.lastSeenAt,
+    firstMetLocation: character.firstMetLocation ?? baseline.firstMetLocation,
+    encounterCount: character.encounterCount ?? baseline.encounterCount,
+    imagePrompt: character.imagePrompt ?? baseline.imagePrompt,
+    source: character.source ?? baseline.source,
+    imageUrl: character.imageUrl ?? baseline.imageUrl
+  };
+};
+
 export const normalizeWorldData = (value: unknown): WorldData => {
   if (!isRecord(value)) {
     return createInitialWorldData();
   }
 
+  const baselineCharacters = createInitialWorldData().characters;
   const normalizeSeed = (seed: unknown): SceneEventSeed => {
     const source = isRecord(seed) ? seed : {};
 
@@ -95,18 +119,38 @@ export const normalizeWorldData = (value: unknown): WorldData => {
     : [];
 
   const characters = Array.isArray(value.characters)
-    ? value.characters.filter(isRecord).map((character) => ({
-        id: typeof character.id === 'string' ? character.id : '',
-        name: typeof character.name === 'string' ? character.name : '',
-        gender: typeof character.gender === 'string' ? character.gender : '',
-        identity: typeof character.identity === 'string' ? character.identity : '',
-        age: typeof character.age === 'string' ? character.age : '',
-        personality: typeof character.personality === 'string' ? character.personality : '',
-        speakingStyle: typeof character.speakingStyle === 'string' ? character.speakingStyle : '',
-        relationshipToPlayer: typeof character.relationshipToPlayer === 'string' ? character.relationshipToPlayer : '',
-        hardRules: isStringArray(character.hardRules) ? character.hardRules : [],
-        ...(typeof character.imageUrl === 'string' ? { imageUrl: character.imageUrl } : {})
-      })).filter((character) => character.id && character.name)
+    ? value.characters.filter(isRecord).map((character) => {
+        const normalizedCharacter: CharacterProfile = {
+          id: typeof character.id === 'string' ? character.id : '',
+          name: typeof character.name === 'string' ? character.name : '',
+          aliases: isStringArray(character.aliases) ? character.aliases : undefined,
+          gender: typeof character.gender === 'string' ? character.gender : '',
+          identity: typeof character.identity === 'string' ? character.identity : '',
+          age: typeof character.age === 'string' ? character.age : '',
+          personality: typeof character.personality === 'string' ? character.personality : '',
+          speakingStyle: typeof character.speakingStyle === 'string' ? character.speakingStyle : '',
+          relationshipToPlayer: typeof character.relationshipToPlayer === 'string' ? character.relationshipToPlayer : '',
+          hardRules: isStringArray(character.hardRules) ? character.hardRules : [],
+          ...(typeof character.appearance === 'string' ? { appearance: character.appearance } : {}),
+          ...(typeof character.currentLook === 'string' ? { currentLook: character.currentLook } : {}),
+          ...(isStringArray(character.knownFacts) ? { knownFacts: character.knownFacts } : {}),
+          ...(typeof character.firstMetAt === 'string' ? { firstMetAt: character.firstMetAt } : {}),
+          ...(typeof character.lastSeenAt === 'string' ? { lastSeenAt: character.lastSeenAt } : {}),
+          ...(typeof character.firstMetLocation === 'string' ? { firstMetLocation: character.firstMetLocation } : {}),
+          ...(typeof character.encounterCount === 'number' ? { encounterCount: character.encounterCount } : {}),
+          ...(typeof character.imagePrompt === 'string' ? { imagePrompt: character.imagePrompt } : {}),
+          ...(character.source === 'baseline' || character.source === 'runtime_generated'
+            ? { source: character.source as CharacterProfile['source'] }
+            : {}),
+          ...(typeof character.imageUrl === 'string' ? { imageUrl: character.imageUrl } : {})
+        };
+        const baseline = baselineCharacters.find(
+          (baselineCharacter) =>
+            baselineCharacter.id === normalizedCharacter.id || baselineCharacter.name === normalizedCharacter.name
+        );
+
+        return hydrateCharacterFromBaseline(normalizedCharacter, baseline);
+      }).filter((character) => character.id && character.name)
     : [];
 
   return {

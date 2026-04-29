@@ -16,6 +16,7 @@ import {
   exportGameSaveZip,
   importGameSave,
   isGameStateBusy,
+  normalizeImportedGameState,
   resetGameProgress
 } from '../../src/save/gameSave';
 import { loadStoredGameState, saveStoredGameState } from '../../src/save/storage';
@@ -113,6 +114,38 @@ describe('game save bundles', () => {
 
     expect(restored?.memory.summary).toContain('本地进度');
     expect(restored?.player.money).toBe(77);
+  });
+
+  it('hydrates missing baseline character portrait fields from older stored states', () => {
+    const oldState = createInitialState();
+    const restored = normalizeImportedGameState({
+      ...oldState,
+      world: {
+        ...oldState.world,
+        data: {
+          ...oldState.world.data,
+          characters: oldState.world.data.characters.map((character) => ({
+            id: character.id,
+            name: character.name,
+            gender: character.gender,
+            identity: character.identity,
+            age: character.age,
+            personality: character.personality,
+            speakingStyle: character.speakingStyle,
+            relationshipToPlayer: character.relationshipToPlayer,
+            hardRules: character.hardRules
+          }))
+        }
+      }
+    });
+
+    const linCheng = restored.world.data.characters.find((character) => character.id === '林澄');
+    const zhouRan = restored.world.data.characters.find((character) => character.id === '周然');
+
+    expect(linCheng?.imageUrl).toBe('/assets/characters/lin-cheng-half-body.png');
+    expect(linCheng?.firstMetLocation).toBe('学校');
+    expect(linCheng?.currentLook).toContain('校服半身立绘');
+    expect(zhouRan?.imageUrl).toBe('/assets/characters/zhou-ran-half-body.png');
   });
 
   it('exports default visual assets and omits temporary generated images', async () => {

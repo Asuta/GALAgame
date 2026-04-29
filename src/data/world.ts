@@ -375,6 +375,14 @@ const ORIGINAL_WORLD_DATA: WorldData = {
       speakingStyle: '说话偏轻、偏短句，情绪起伏含蓄，不会突然变成夸张搞笑或油滑语气',
       relationshipToPlayer: '与玩家处于暧昧建立初期，正在从陌生转向信任',
       hardRules: ['绝不能改成男性', '不改变既定身份', '不突然自称与设定矛盾的内容'],
+      appearance: '黑色长发，校服或简洁日常穿搭，神情安静而敏感。',
+      currentLook: '放学后的校服半身立绘，眼神克制，带着没有说出口的心事。',
+      knownFacts: ['她是学校里的核心女主', '她不会轻易把真实想法全部说出口'],
+      firstMetAt: '原版初始数据',
+      lastSeenAt: '原版初始数据',
+      firstMetLocation: '学校',
+      encounterCount: 1,
+      source: 'baseline',
       imageUrl: '/assets/characters/lin-cheng-half-body.png'
     },
     {
@@ -387,6 +395,14 @@ const ORIGINAL_WORLD_DATA: WorldData = {
       speakingStyle: '语气自然，带一点调侃，但不会抢主线戏份',
       relationshipToPlayer: '辅助角色，不是当前主要恋爱对象',
       hardRules: ['不抢走林澄的主线定位', '不擅自改变性别与身份'],
+      appearance: '短发，普通高中生日常穿搭，表情轻松但观察力强。',
+      currentLook: '轻松站姿的半身立绘，带一点调侃的笑意。',
+      knownFacts: ['他是主角生活圈中的辅助角色', '他有时会用玩笑掩饰认真'],
+      firstMetAt: '原版初始数据',
+      lastSeenAt: '原版初始数据',
+      firstMetLocation: '城市',
+      encounterCount: 1,
+      source: 'baseline',
       imageUrl: '/assets/characters/zhou-ran-half-body.png'
     }
   ]

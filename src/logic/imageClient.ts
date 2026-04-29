@@ -1,4 +1,4 @@
-import type { GeneratedEvent, Scene, TaskRuntime } from '../data/types';
+import type { CharacterProfile, GeneratedEvent, Scene, TaskRuntime } from '../data/types';
 
 const DEFAULT_IMAGE_MODEL = 'qwen-image-2.0';
 const DEFAULT_IMAGE_SIZE = '1280*800';
@@ -46,6 +46,13 @@ export interface BuildTaskImagePromptInput {
   locationLabel: string;
   memorySummary?: string;
   memoryFacts?: string[];
+  prompt?: string;
+}
+
+export interface BuildCharacterPortraitPromptInput {
+  character: CharacterProfile;
+  locationLabel?: string;
+  memorySummary?: string;
   prompt?: string;
 }
 
@@ -264,6 +271,33 @@ export const buildTaskImagePrompt = ({
   ].join('\n');
 };
 
+export const buildCharacterPortraitPrompt = ({
+  character,
+  locationLabel = '',
+  memorySummary = ''
+}: BuildCharacterPortraitPromptInput): string => {
+  const knownFacts = character.knownFacts?.slice(-6).join('；') || '暂无。';
+
+  return [
+    '现代恋爱向视觉小说人物卡立绘，竖屏半身到膝上构图，透明感干净背景或简洁场景背景。',
+    '画风统一为高质量二次元动漫视觉小说角色立绘，清晰线稿，柔和赛璐璐上色，干净细节。',
+    '不要真实照片，不要写实摄影，不要 3D 渲染，不要欧美写实，不要文字、水印、logo 或 UI。',
+    `角色名：${character.name}`,
+    `性别：${character.gender}`,
+    `年龄：${character.age}`,
+    `身份：${character.identity}`,
+    `性格：${character.personality}`,
+    `说话风格：${character.speakingStyle}`,
+    `与玩家关系：${character.relationshipToPlayer}`,
+    `外貌：${character.appearance || '暂无明确外貌。'}`,
+    `当前样貌：${character.currentLook || character.appearance || '暂无明确当前样貌。'}`,
+    `初遇地点：${character.firstMetLocation || locationLabel || '未知'}`,
+    `已知事实：${knownFacts}`,
+    `世界记忆摘要：${memorySummary || '暂无。'}`,
+    '请生成一个稳定、可反复用于角色信息页面的人物卡形象。人物必须完整入镜，不要裁掉头发、手臂或腿部。'
+  ].join('\n');
+};
+
 export const getImageRuntimeConfig = (): ImageRuntimeConfig => {
   const endpoint = import.meta.env.VITE_IMAGE_API_BASE_URL || DEFAULT_IMAGE_ENDPOINT;
   const apiKey = import.meta.env.VITE_IMAGE_API_KEY;
@@ -353,6 +387,44 @@ export const requestGeneratedTaskImage = async ({
 
   if (!imageUrls.length) {
     throw new Error('图片生成接口没有返回图片地址。');
+  }
+
+  return imageUrls[0];
+};
+
+export const requestGeneratedCharacterImage = async ({
+  character,
+  locationLabel = '',
+  memorySummary = '',
+  prompt,
+  fetchImpl = fetch
+}: BuildCharacterPortraitPromptInput & { fetchImpl?: typeof fetch }): Promise<string> => {
+  const config = getImageRuntimeConfig();
+  const finalPrompt = prompt?.trim() || buildCharacterPortraitPrompt({ character, locationLabel, memorySummary });
+  const payload = buildImageGenerationPayload({
+    model: config.model,
+    prompt: finalPrompt,
+    size: '1024*1536'
+  });
+  const response = await fetchImpl(config.endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`
+    },
+    body: JSON.stringify(payload)
+  });
+  const responseText = await response.text();
+  const responseBody = responseText ? JSON.parse(responseText) : {};
+
+  if (!response.ok) {
+    throw new Error(responseBody?.error?.message || responseBody?.message || '人物图片生成失败。');
+  }
+
+  const imageUrls = extractGeneratedImageUrls(responseBody);
+
+  if (!imageUrls.length) {
+    throw new Error('图片生成接口没有返回人物图片地址。');
   }
 
   return imageUrls[0];

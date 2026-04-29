@@ -3,11 +3,13 @@ import { worldData } from '../../src/data/world';
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import {
   buildEventImagePrompt,
+  buildCharacterPortraitPrompt,
   buildImageGenerationPayload,
   buildTaskImagePrompt,
   extractGeneratedImageUrls,
   normalizeImageSize,
   requestGeneratedEventImage,
+  requestGeneratedCharacterImage,
   requestGeneratedTaskImage,
   sanitizeTaskVisualText
 } from '../../src/logic/imageClient';
@@ -222,6 +224,36 @@ describe('imageClient', () => {
     expect(prompt).toContain('全年龄、安全、日常向');
   });
 
+  it('builds a reusable character portrait prompt from a character card', () => {
+    const prompt = buildCharacterPortraitPrompt({
+      character: {
+        id: '沈听',
+        name: '沈听',
+        gender: '女',
+        identity: '电影院门口遇到的同龄女生',
+        age: '17岁左右',
+        personality: '温和、细心、稍微有点怕生',
+        speakingStyle: '语气轻，句子不长',
+        relationshipToPlayer: '刚认识',
+        hardRules: ['保持温和细心的气质'],
+        appearance: '浅色外套，短发，手里拿着电影票根',
+        currentLook: '站在电影院门口的灯牌下，手里拿着票根',
+        knownFacts: ['她在电影院门口帮玩家捡起票根'],
+        firstMetLocation: '电影院门口'
+      },
+      locationLabel: '城市 / 电影院',
+      memorySummary: '玩家刚认识沈听。'
+    });
+
+    expect(prompt).toContain('现代恋爱向视觉小说人物卡立绘');
+    expect(prompt).toContain('沈听');
+    expect(prompt).toContain('电影院门口遇到的同龄女生');
+    expect(prompt).toContain('浅色外套');
+    expect(prompt).toContain('她在电影院门口帮玩家捡起票根');
+    expect(prompt).toContain('人物卡形象');
+    expect(prompt).toContain('不要真实照片');
+  });
+
   it('requests a task image without reference images and extracts the result url', async () => {
     vi.stubEnv('VITE_IMAGE_API_BASE_URL', 'https://example.com/v1/images/generations');
     vi.stubEnv('VITE_IMAGE_API_KEY', 'image-key');
@@ -256,6 +288,40 @@ describe('imageClient', () => {
     expect(payload.input.messages[0].content[0].text).toContain('横屏 16:10 构图');
     expect(payload.input.messages[0].content[0].text).toContain('禁止真实照片');
     expect(payload.parameters.size).toBe('1280*800');
+  });
+
+  it('requests a character portrait image with vertical card size', async () => {
+    vi.stubEnv('VITE_IMAGE_API_BASE_URL', 'https://example.com/v1/images/generations');
+    vi.stubEnv('VITE_IMAGE_API_KEY', 'image-key');
+
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ data: [{ url: 'https://example.com/character.png' }] }), { status: 200 })
+    );
+
+    await expect(
+      requestGeneratedCharacterImage({
+        character: {
+          id: '沈听',
+          name: '沈听',
+          gender: '女',
+          identity: '电影院门口遇到的同龄女生',
+          age: '17岁左右',
+          personality: '温和、细心',
+          speakingStyle: '语气轻',
+          relationshipToPlayer: '刚认识',
+          hardRules: [],
+          appearance: '浅色外套，短发'
+        },
+        locationLabel: '城市 / 电影院',
+        fetchImpl
+      })
+    ).resolves.toBe('https://example.com/character.png');
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    expect(payload.input.messages[0].content[0].text).toContain('人物卡立绘');
+    expect(payload.input.messages[0].content[0].text).toContain('沈听');
+    expect(payload.parameters.size).toBe('1024*1536');
   });
 
   it('downloads reference image urls as data urls before sending the generation request', async () => {

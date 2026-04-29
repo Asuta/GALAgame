@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   requestGeneratedEventImageMock,
   requestGeneratedTaskImageMock,
+  requestGeneratedCharacterImageMock,
   requestEventImagePromptMock,
+  requestCharacterDiscoveriesMock,
   requestGeneratedSceneEventMock,
   requestStoryReplyStreamMock,
   requestEventTimeSettlementMock,
@@ -15,7 +17,9 @@ const {
 } = vi.hoisted(() => ({
   requestGeneratedEventImageMock: vi.fn(),
   requestGeneratedTaskImageMock: vi.fn(),
+  requestGeneratedCharacterImageMock: vi.fn(),
   requestEventImagePromptMock: vi.fn(),
+  requestCharacterDiscoveriesMock: vi.fn(),
   requestGeneratedSceneEventMock: vi.fn(),
   requestStoryReplyStreamMock: vi.fn(),
   requestEventTimeSettlementMock: vi.fn(),
@@ -32,7 +36,8 @@ vi.mock('../../src/logic/imageClient', async () => {
   return {
     ...actual,
     requestGeneratedEventImage: requestGeneratedEventImageMock,
-    requestGeneratedTaskImage: requestGeneratedTaskImageMock
+    requestGeneratedTaskImage: requestGeneratedTaskImageMock,
+    requestGeneratedCharacterImage: requestGeneratedCharacterImageMock
   };
 });
 
@@ -42,6 +47,7 @@ vi.mock('../../src/logic/chatClient', async () => {
   return {
     ...actual,
     requestEventImagePrompt: requestEventImagePromptMock,
+    requestCharacterDiscoveries: requestCharacterDiscoveriesMock,
     requestGeneratedSceneEvent: requestGeneratedSceneEventMock,
     requestStoryReplyStream: requestStoryReplyStreamMock,
     requestEventTimeSettlement: requestEventTimeSettlementMock,
@@ -151,7 +157,9 @@ describe('bindUi scene switching', () => {
     historyScrollHeight = 800;
     requestGeneratedEventImageMock.mockReset();
     requestGeneratedTaskImageMock.mockReset();
+    requestGeneratedCharacterImageMock.mockReset();
     requestEventImagePromptMock.mockReset();
+    requestCharacterDiscoveriesMock.mockReset();
     requestGeneratedSceneEventMock.mockReset();
     requestStoryReplyStreamMock.mockReset();
     requestEventTimeSettlementMock.mockReset();
@@ -160,6 +168,7 @@ describe('bindUi scene switching', () => {
     requestTaskManualReplyStreamMock.mockReset();
     requestTaskFinalSummaryMock.mockReset();
     requestTaskImagePromptMock.mockReset();
+    requestCharacterDiscoveriesMock.mockResolvedValue([]);
     requestStoryReplyStreamMock.mockImplementation(async function* () {});
     requestTaskManualReplyStreamMock.mockImplementation(async function* () {});
     requestEventTimeSettlementMock.mockResolvedValue({
@@ -185,6 +194,7 @@ describe('bindUi scene switching', () => {
     requestTaskImagePromptMock.mockResolvedValue('模型重写的任务生图提示词：玩家在咖啡店窗边查看手机。');
     requestGeneratedEventImageMock.mockResolvedValue('https://example.com/generated-event.png');
     requestGeneratedTaskImageMock.mockResolvedValue('https://example.com/generated-task.png');
+    requestGeneratedCharacterImageMock.mockResolvedValue('https://example.com/generated-character.png');
     requestEventImagePromptMock.mockResolvedValue('生成的固定生图提示词：当前她把练习册合上，窗边两人对视。');
   });
 
@@ -219,6 +229,66 @@ describe('bindUi scene switching', () => {
     expect(requestStoryReplyStreamMock).toHaveBeenCalledOnce();
     expect(document.body.textContent).toContain('事件中');
     expect(document.querySelector('[data-action="end-event"]')).not.toBeNull();
+  });
+
+  it('collects a new character card when an event ends', async () => {
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+    requestStoryReplyStreamMock.mockImplementation(async function* () {
+      yield '旁白：体育馆门口的许夏朝你挥了挥手。[EVENT_END]';
+    });
+    requestCharacterDiscoveriesMock.mockResolvedValueOnce([
+      {
+        name: '许夏',
+        aliases: [],
+        gender: '女',
+        identity: '体育馆里遇到的高年级学生',
+        age: '18岁左右',
+        personality: '直接、热情、有竞争心',
+        speakingStyle: '短句，带一点挑衅但不恶意',
+        relationshipToPlayer: '刚认识',
+        appearance: '短发，运动外套，神情爽朗',
+        currentLook: '站在体育馆门口，额前有汗，穿运动外套',
+        knownFacts: ['在体育馆附近主动和玩家搭话'],
+        hardRules: ['保持运动系气质'],
+        shouldPersist: true,
+        confidence: 0.9
+      }
+    ]);
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '我和新遇到的人聊了几句。';
+    (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
+
+    await waitForText('许夏');
+    for (let index = 0; index < 40 && requestGeneratedCharacterImageMock.mock.calls.length === 0; index += 1) {
+      await waitForStreamFrame();
+      await flushUi();
+    }
+    expect(requestCharacterDiscoveriesMock).toHaveBeenCalledOnce();
+    expect(requestGeneratedCharacterImageMock).toHaveBeenCalledOnce();
+
+    (document.querySelector('[data-action="open-character"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.querySelector('[data-testid="character-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('人物图鉴');
+    expect(document.body.textContent).toContain('体育馆里遇到的高年级学生');
+    expect(document.querySelector('img[alt="许夏的人物立绘"]')?.getAttribute('src')).toBe('https://example.com/generated-character.png');
   });
 
   it('does not end a hidden previous event when leaving a newly selected loading scene', async () => {
@@ -830,5 +900,56 @@ describe('bindUi scene switching', () => {
     expect(document.querySelector('[data-testid="decision-page"]')).not.toBeNull();
     expect(document.body.textContent).toContain('整理书包之后');
     expect(document.querySelector('[data-testid="decision-task-visual-image"]')?.getAttribute('src')).toBe('https://example.com/generated-task.png');
+  });
+
+  it('collects a new character card when a task completes', async () => {
+    requestTaskResultMock.mockResolvedValueOnce({
+      summary: '你在电影院门口遇见了沈听，她帮你捡起掉在地上的票根。',
+      facts: ['沈听在电影院门口帮了你一次'],
+      effects: []
+    });
+    requestCharacterDiscoveriesMock.mockResolvedValueOnce([
+      {
+        name: '沈听',
+        aliases: [],
+        gender: '女',
+        identity: '电影院门口遇到的同龄女生',
+        age: '17岁左右',
+        personality: '温和、细心、稍微有点怕生',
+        speakingStyle: '语气轻，句子不长',
+        relationshipToPlayer: '刚认识',
+        appearance: '浅色外套，短发，手里拿着电影票根',
+        currentLook: '站在电影院门口的灯牌下，手里拿着票根',
+        knownFacts: ['她在电影院门口帮玩家捡起票根'],
+        hardRules: ['保持温和细心的气质'],
+        shouldPersist: true,
+        confidence: 0.88
+      }
+    ]);
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-action="open-task-planning"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const contentInput = document.querySelector('[data-task-content]') as HTMLTextAreaElement;
+    contentInput.value = '去电影院看一场电影';
+    (document.querySelector('[data-action="start-task"]') as HTMLButtonElement).click();
+
+    for (let index = 0; index < 40 && requestGeneratedCharacterImageMock.mock.calls.length === 0; index += 1) {
+      await waitForStreamFrame();
+      await flushUi();
+    }
+
+    expect(requestCharacterDiscoveriesMock).toHaveBeenCalledOnce();
+    expect(requestCharacterDiscoveriesMock.mock.calls[0][0].contextType).toBe('task');
+    expect(requestGeneratedCharacterImageMock).toHaveBeenCalledOnce();
+
+    (document.querySelector('[data-action="open-character"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.body.textContent).toContain('沈听');
+    expect(document.body.textContent).toContain('电影院门口遇到的同龄女生');
+    expect(document.querySelector('img[alt="沈听的人物立绘"]')?.getAttribute('src')).toBe('https://example.com/generated-character.png');
   });
 });

@@ -1,5 +1,6 @@
-import { requestGeneratedEventImage, requestGeneratedTaskImage } from '../logic/imageClient';
+import { buildCharacterPortraitPrompt, requestGeneratedCharacterImage, requestGeneratedEventImage, requestGeneratedTaskImage } from '../logic/imageClient';
 import {
+  requestCharacterDiscoveries,
   requestEventImagePrompt,
   requestEventTimeSettlement,
   requestGeneratedSceneEvent,
@@ -9,7 +10,8 @@ import {
   requestTaskResult,
   requestTaskSegment,
   requestStoryReplyStream,
-  stripEventEndMarker
+  stripEventEndMarker,
+  type CharacterDiscovery
 } from '../logic/chatClient';
 import { buildPlayerFacingSceneSummary, summarizeResolvedEvent, compressMemory } from '../logic/memory';
 import { getVisibleActiveEvent, getVisiblePreparedEvent } from '../state/selectors';
@@ -36,6 +38,7 @@ import {
   saveMediaBlob
 } from '../save/mediaStore';
 import type { GameEffect } from '../player/types';
+import type { CharacterProfile, TaskRuntime } from '../data/types';
 import {
   appendActiveEventFacts,
   advanceClockByMinutes,
@@ -88,6 +91,7 @@ import {
   startEvent,
   startStreamingReply,
   updateMemory,
+  upsertCharacter,
   finishSceneGeneration,
   type GameState
 } from '../state/store';
@@ -121,9 +125,87 @@ const buildCharacterProfile = (state: GameState, name?: string): string => {
     `性格：${character.personality}`,
     `说话风格：${character.speakingStyle}`,
     `与玩家关系：${character.relationshipToPlayer}`,
+    character.appearance ? `外貌：${character.appearance}` : '',
+    character.currentLook ? `当前样貌：${character.currentLook}` : '',
+    character.knownFacts?.length ? `已知事实：${character.knownFacts.join('；')}` : '',
     `硬约束：${character.hardRules.join('；')}`
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 };
+
+const createCharacterId = (name: string, characters: CharacterProfile[]): string => {
+  const baseId = name
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\u4e00-\u9fa5a-z0-9_-]/gi, '')
+    .slice(0, 24) || `character-${characters.length + 1}`;
+  let id = baseId;
+  let suffix = 2;
+
+  while (characters.some((character) => character.id === id)) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  return id;
+};
+
+const findMatchingCharacter = (characters: CharacterProfile[], discovery: CharacterDiscovery): CharacterProfile | null => {
+  const names = new Set([discovery.name, ...discovery.aliases].map((value) => value.trim()).filter(Boolean));
+
+  return (
+    characters.find((character) => character.id === discovery.existingCharacterId) ??
+    characters.find((character) => character.name === discovery.name || character.id === discovery.name) ??
+    characters.find((character) =>
+      [character.name, character.id, ...(character.aliases ?? [])].some((value) => names.has(value))
+    ) ??
+    null
+  );
+};
+
+const mergeUniqueStrings = (...groups: Array<string[] | undefined>): string[] =>
+  Array.from(
+    new Set(
+      groups
+        .flatMap((group) => group ?? [])
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+
+const buildCharacterFromDiscovery = ({
+  discovery,
+  existing,
+  characters,
+  timeLabel,
+  locationLabel
+}: {
+  discovery: CharacterDiscovery;
+  existing: CharacterProfile | null;
+  characters: CharacterProfile[];
+  timeLabel: string;
+  locationLabel: string;
+}): CharacterProfile => ({
+  id: existing?.id ?? createCharacterId(discovery.name, characters),
+  name: existing?.name ?? discovery.name,
+  aliases: mergeUniqueStrings(existing?.aliases, discovery.aliases, existing && existing.name !== discovery.name ? [discovery.name] : []),
+  gender: discovery.gender || existing?.gender || '未知',
+  identity: discovery.identity || existing?.identity || '新认识的人物',
+  age: discovery.age || existing?.age || '未知',
+  personality: discovery.personality || existing?.personality || '仍在观察中',
+  speakingStyle: discovery.speakingStyle || existing?.speakingStyle || '普通自然的说话方式',
+  relationshipToPlayer: discovery.relationshipToPlayer || existing?.relationshipToPlayer || '刚认识',
+  hardRules: mergeUniqueStrings(existing?.hardRules, discovery.hardRules),
+  appearance: discovery.appearance || existing?.appearance,
+  currentLook: discovery.currentLook || existing?.currentLook || discovery.appearance || existing?.appearance,
+  knownFacts: mergeUniqueStrings(existing?.knownFacts, discovery.knownFacts),
+  firstMetAt: existing?.firstMetAt ?? timeLabel,
+  lastSeenAt: timeLabel,
+  firstMetLocation: existing?.firstMetLocation ?? locationLabel,
+  encounterCount: (existing?.encounterCount ?? 0) + 1,
+  imagePrompt: existing?.imagePrompt,
+  source: existing?.source ?? 'runtime_generated',
+  imageUrl: existing?.imageUrl
+});
 
 const applyStoredSettings = (state: GameState): GameState => {
   const stored = loadStoredSettings();
@@ -176,6 +258,17 @@ const TASK_DURATION_UNIT_MINUTES = {
 const formatTaskTimeLabel = (minutes: number): string => {
   return formatTaskClockLabel(minutes);
 };
+
+const buildTaskDiscoveryTranscript = (task: TaskRuntime): string[] => [
+  `任务内容：${task.content}`,
+  `任务时间：${formatTaskTimeLabel(task.startMinutes)}-${formatTaskTimeLabel(task.endMinutes)}`,
+  `任务总时长：${task.durationMinutes} 分钟，过程拆分 ${task.segmentCount} 次`,
+  ...task.segments.map(
+    (segment) =>
+      `${segment.fromLabel}-${segment.toLabel}：${segment.content}${segment.complication ? `（插曲：${segment.complication}）` : ''}`
+  ),
+  ...task.transcript.map((message) => `${message.label}：${message.content}`)
+];
 
 const parsePositiveIntegerInput = (value: string): number | null => {
   const parsed = Number(value);
@@ -245,6 +338,87 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     await saveMediaBlob(key, dataUrlToBlob(imageUrl));
     return createStoredMediaUrl(key);
+  };
+
+  const collectCharacterDiscoveries = async ({
+    contextType,
+    title,
+    locationLabel,
+    timeLabel,
+    summary,
+    transcript,
+    facts
+  }: {
+    contextType: 'event' | 'task';
+    title: string;
+    locationLabel: string;
+    timeLabel: string;
+    summary: string;
+    transcript: string[];
+    facts: string[];
+  }): Promise<void> => {
+    try {
+      const discoveries = await requestCharacterDiscoveries({
+        model: state.settings.currentModel,
+        contextType,
+        title,
+        locationLabel,
+        timeLabel,
+        summary,
+        transcript,
+        facts,
+        existingCharacters: state.world.data.characters,
+        playerStatePrompt: getPlayerStatePrompt(state)
+      });
+
+      for (const discovery of discoveries) {
+        if (!discovery.shouldPersist || discovery.confidence < 0.55) {
+          continue;
+        }
+
+        const existing = findMatchingCharacter(state.world.data.characters, discovery);
+        let character = buildCharacterFromDiscovery({
+          discovery,
+          existing,
+          characters: state.world.data.characters,
+          timeLabel,
+          locationLabel
+        });
+
+        state = upsertCharacter(state, character);
+
+        if (!character.imageUrl) {
+          const imagePrompt = buildCharacterPortraitPrompt({
+            character,
+            locationLabel,
+            memorySummary: state.memory.summary
+          });
+
+          try {
+            const imageUrl = await requestGeneratedCharacterImage({
+              character,
+              locationLabel,
+              memorySummary: state.memory.summary,
+              prompt: imagePrompt
+            });
+            const storedImageUrl = await persistGeneratedMediaReference(`character:${character.id}`, imageUrl);
+            character = {
+              ...character,
+              imageUrl: storedImageUrl,
+              imagePrompt
+            };
+            state = upsertCharacter(state, character);
+          } catch {
+            state = upsertCharacter(state, {
+              ...character,
+              imagePrompt
+            });
+          }
+        }
+      }
+    } catch {
+      // 人物收集是附加持久化步骤，失败时不阻断事件或任务结算。
+    }
   };
 
   const updateHistoryScrollPreference = (history: HTMLElement): void => {
@@ -488,6 +662,15 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         state = updateMemory(state, memoryResult);
         state = setSceneSummary(state, resolvedSceneId, playerSceneSummary);
         applySettlementEffectsToState(timeSettlement.summary, timeSettlement.effects);
+        await collectCharacterDiscoveries({
+          contextType: 'event',
+          title: resolvedTitle,
+          locationLabel: resolvedEvent.locationLabel,
+          timeLabel: state.clock.label,
+          summary: eventSettlementSummary,
+          transcript: transcriptForMemory,
+          facts: [...resolvedEvent.facts, ...memoryResult.facts]
+        });
         state = recordWorldAdvance(
           state,
           `事件【${resolvedTitle}】已经自然收束，时间推进了 ${timeSettlement.minutesElapsed} 分钟。${eventSettlementSummary}`
@@ -607,6 +790,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       return;
     }
 
+    const locationLabel = resolveLocationLabel(state);
+    const discoveryTranscript = buildTaskDiscoveryTranscript(task);
     state = startTaskRequest(state);
     rerender();
 
@@ -619,10 +804,19 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
               task,
               memorySummary: state.memory.summary,
               memoryFacts: state.memory.facts,
-              locationLabel: resolveLocationLabel(state),
+              locationLabel,
               playerStatePrompt: getPlayerStatePrompt(state)
             });
       applySettlementEffectsToState(settlement.summary, settlement.effects);
+      await collectCharacterDiscoveries({
+        contextType: 'task',
+        title: task.title,
+        locationLabel,
+        timeLabel: formatTaskTimeLabel(task.endMinutes),
+        summary: settlement.summary,
+        transcript: discoveryTranscript,
+        facts: [...task.facts, ...settlement.facts]
+      });
       state = completeTask(state, settlement.summary, settlement.facts);
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
@@ -680,6 +874,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         const nextTask = state.task.activeTask;
 
         if (nextTask) {
+          const locationLabel = resolveLocationLabel(state);
+          const discoveryTranscript = buildTaskDiscoveryTranscript(nextTask);
           state = startTaskRequest(state);
           rerender();
           const settlement = await requestTaskFinalSummary({
@@ -687,10 +883,19 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
             task: nextTask,
             memorySummary: state.memory.summary,
             memoryFacts: state.memory.facts,
-            locationLabel: resolveLocationLabel(state),
+            locationLabel,
             playerStatePrompt: getPlayerStatePrompt(state)
           });
           applySettlementEffectsToState(settlement.summary, settlement.effects);
+          await collectCharacterDiscoveries({
+            contextType: 'task',
+            title: nextTask.title,
+            locationLabel,
+            timeLabel: formatTaskTimeLabel(nextTask.endMinutes),
+            summary: settlement.summary,
+            transcript: discoveryTranscript,
+            facts: [...nextTask.facts, ...settlement.facts]
+          });
           state = completeTask(state, settlement.summary, settlement.facts);
         }
       }
@@ -772,6 +977,8 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     try {
       if (executionMode === 'result') {
+        const locationLabel = resolveLocationLabel(state);
+        const discoveryTranscript = buildTaskDiscoveryTranscript(task);
         const [settlement] = await Promise.all([
           requestTaskResult({
             model: state.settings.currentModel,
@@ -779,12 +986,21 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
             timeLabel: state.clock.label,
             memorySummary: state.memory.summary,
             memoryFacts: state.memory.facts,
-            locationLabel: resolveLocationLabel(state),
+            locationLabel,
             playerStatePrompt: getPlayerStatePrompt(state)
           }),
           generateCurrentTaskImage()
         ]);
         applySettlementEffectsToState(settlement.summary, settlement.effects);
+        await collectCharacterDiscoveries({
+          contextType: 'task',
+          title: task.title,
+          locationLabel,
+          timeLabel: formatTaskTimeLabel(task.endMinutes),
+          summary: settlement.summary,
+          transcript: discoveryTranscript,
+          facts: [...task.facts, ...settlement.facts]
+        });
         state = completeTask(state, settlement.summary, settlement.facts);
       } else {
         await generateCurrentTaskImage();

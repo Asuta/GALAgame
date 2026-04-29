@@ -113,6 +113,7 @@ export interface TaskRuntime {
 export interface CharacterProfile {
   id: string;
   name: string;
+  aliases?: string[];
   gender: string;
   identity: string;
   age: string;
@@ -120,6 +121,15 @@ export interface CharacterProfile {
   speakingStyle: string;
   relationshipToPlayer: string;
   hardRules: string[];
+  appearance?: string;
+  currentLook?: string;
+  knownFacts?: string[];
+  firstMetAt?: string;
+  lastSeenAt?: string;
+  firstMetLocation?: string;
+  encounterCount?: number;
+  imagePrompt?: string;
+  source?: 'baseline' | 'runtime_generated';
   imageUrl?: string;
 }
 

@@ -12,6 +12,7 @@ import {
   recordSettlementEffects,
   setSceneSummary,
   startTask,
+  upsertCharacter,
   appendTaskSegment,
   completeTask,
   finishTaskImageGeneration,
@@ -453,8 +454,29 @@ describe('renderApp', () => {
     expect(document.querySelector('.model-menu')).toBeNull();
   });
 
-  it('renders the player character page with attributes, money, and inventory', () => {
+  it('renders the character gallery with portraits, player attributes, money, and inventory', () => {
     let state = openCharacterPage(createInitialState());
+    state = upsertCharacter(state, {
+      id: '沈听',
+      name: '沈听',
+      aliases: ['电影院女生'],
+      gender: '女',
+      identity: '电影院门口遇到的同龄女生',
+      age: '17岁左右',
+      personality: '温和、细心、稍微有点怕生',
+      speakingStyle: '语气轻，句子不长',
+      relationshipToPlayer: '刚认识',
+      hardRules: ['保持温和细心的气质'],
+      appearance: '浅色外套，短发，手里拿着电影票根',
+      currentLook: '站在电影院门口的灯牌下，手里拿着票根',
+      knownFacts: ['她在电影院门口帮玩家捡起票根'],
+      firstMetAt: '2026年4月29日 晚上 20:00',
+      lastSeenAt: '2026年4月29日 晚上 20:00',
+      firstMetLocation: '电影院门口',
+      encounterCount: 1,
+      source: 'runtime_generated',
+      imageUrl: 'media://character:沈听'
+    });
     state = {
       ...state,
       player: {
@@ -480,6 +502,12 @@ describe('renderApp', () => {
     renderApp(document.querySelector('#app') as HTMLDivElement, state);
 
     expect(document.querySelector('[data-testid="character-page"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('人物图鉴');
+    expect(document.body.textContent).toContain('沈听');
+    expect(document.body.textContent).toContain('电影院门口遇到的同龄女生');
+    expect(document.body.textContent).toContain('她在电影院门口帮玩家捡起票根');
+    expect(document.querySelectorAll('[data-testid="character-profile-card"]').length).toBeGreaterThanOrEqual(3);
+    expect(document.querySelector('img[alt="沈听的人物立绘"]')?.getAttribute('data-media-src')).toBe('media://character:沈听');
     expect(document.body.textContent).toContain('主角状态');
     expect(document.body.textContent).toContain('当前资产');
     expect(document.body.textContent).toContain('500');
