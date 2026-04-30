@@ -103,7 +103,7 @@ import {
   type GameState
 } from '../state/store';
 import { renderApp } from './renderApp';
-import { resolveCharacterReference, resolveSceneBackground } from '../visual/assetCatalog';
+import { collectEventImageReferences } from '../visual/assetCatalog';
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;
 
@@ -1263,10 +1263,12 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     }
 
     const scene = state.world.data.scenes.find((item) => item.id === eventForImage.sceneId) ?? null;
-    const referenceImageUrls = [
-      resolveSceneBackground(eventForImage.sceneId, state.navigation.currentRegionId, state.world.data),
-      resolveCharacterReference(eventForImage.cast[0] ?? null, state.world.data)
-    ].filter((url): url is string => !!url);
+    const imageReferences = collectEventImageReferences({
+      event: eventForImage,
+      currentRegionId: state.navigation.currentRegionId,
+      worldData: state.world.data,
+      transcript: state.event.transcript
+    });
 
     state = startEventImageGeneration(state, eventForImage.id);
     rerender();
@@ -1294,7 +1296,11 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         transcript,
         memorySummary: state.memory.summary,
         memoryFacts: state.memory.facts,
-        referenceImageUrls
+        imageReferences,
+        loadMediaBlob,
+        onReferenceImageWarning: (message) => {
+          console.warn(`事件生图参考图跳过：${message}`);
+        }
       });
       const storedImageUrl = await persistGeneratedMediaReference(`event:${eventForImage.id}`, imageUrl);
       state = finishEventImageGeneration(state, eventForImage.id, storedImageUrl, imagePrompt);

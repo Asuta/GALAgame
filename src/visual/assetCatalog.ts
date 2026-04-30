@@ -1,6 +1,6 @@
 import { getVisiblePreparedEvent } from '../state/selectors';
 import type { GameState } from '../state/store';
-import type { WorldData } from '../data/types';
+import type { GeneratedEvent, WorldData } from '../data/types';
 
 const REGION_BACKGROUNDS = {
   school: '/assets/backgrounds/region-school-main.png',
@@ -50,6 +50,13 @@ export interface VisualSelection {
 }
 
 const CITY_MAP_BACKGROUND = '/assets/map/city-overview-main.png';
+
+export interface EventImageReference {
+  kind: 'scene' | 'character';
+  label: string;
+  url: string;
+  characterId?: string;
+}
 
 export interface ExportableVisualAsset {
   key: string;
@@ -192,6 +199,104 @@ export const resolveSceneBackground = (sceneId: string | null, regionId: string 
 
 export const resolveCharacterReference = (castMember: string | null, worldData: WorldData): string | null =>
   resolveCharacterPortrait(castMember, worldData);
+
+const normalizeReferenceName = (value: string): string => value.trim().toLowerCase();
+
+const getCharacterReferenceUrl = (character: WorldData['characters'][number]): string | null => {
+  if (character.imageUrl) {
+    return character.imageUrl;
+  }
+
+  if (isVisualCharacterId(character.id)) {
+    return CHARACTER_PORTRAITS[character.id];
+  }
+
+  if (isVisualCharacterId(character.name)) {
+    return CHARACTER_PORTRAITS[character.name];
+  }
+
+  return null;
+};
+
+const characterReferenceNames = (character: WorldData['characters'][number]): string[] =>
+  [character.id, character.name, ...(character.aliases ?? [])].map(normalizeReferenceName).filter(Boolean);
+
+export const collectEventImageReferences = ({
+  event,
+  currentRegionId,
+  worldData,
+  transcript = []
+}: {
+  event: GeneratedEvent;
+  currentRegionId: string | null;
+  worldData: WorldData;
+  transcript?: Array<{ label: string; content?: string }>;
+}): EventImageReference[] => {
+  const references: EventImageReference[] = [
+    {
+      kind: 'scene',
+      label: event.locationLabel,
+      url: resolveSceneBackground(event.sceneId, currentRegionId, worldData)
+    }
+  ];
+  const castNames = event.cast.map(normalizeReferenceName).filter(Boolean);
+  const castNameSet = new Set(castNames);
+  const recentTranscript = transcript.slice(-8);
+  const recentSpeakerNames = recentTranscript.map((message) => normalizeReferenceName(message.label)).filter(Boolean);
+  const recentSpeakerSet = new Set(recentSpeakerNames);
+  const searchableStoryText = [
+    event.title,
+    event.premise,
+    event.openingState,
+    event.currentPhase,
+    ...event.facts,
+    ...recentTranscript.map((message) => `${message.label} ${message.content ?? ''}`)
+  ]
+    .join('\n')
+    .toLowerCase();
+
+  const characterReferences = worldData.characters
+    .map((character) => {
+      const url = getCharacterReferenceUrl(character);
+
+      if (!url) {
+        return null;
+      }
+
+      const names = characterReferenceNames(character);
+      const castIndex = castNames.findIndex((name) => names.includes(name));
+      const latestSpeakerIndex = [...recentSpeakerNames].reverse().findIndex((name) => names.includes(name));
+      const storyMentionCount = names.reduce((count, name) => count + (name && searchableStoryText.includes(name) ? 1 : 0), 0);
+      const exactMatch =
+        names.some((name) => castNameSet.has(name)) ||
+        names.some((name) => recentSpeakerSet.has(name)) ||
+        storyMentionCount > 0;
+
+      if (!exactMatch) {
+        return null;
+      }
+
+      return {
+        character,
+        url,
+        score:
+          (castIndex >= 0 ? 120 - castIndex * 12 : 0) +
+          (latestSpeakerIndex >= 0 ? 60 - latestSpeakerIndex * 6 : 0) +
+          storyMentionCount * 8
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => !!item)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 2)
+    .map(({ character, url }) => ({
+      kind: 'character' as const,
+      label: character.name,
+      url,
+      characterId: character.id
+    }));
+
+  return [...references, ...characterReferences].slice(0, 3);
+};
 
 export const resolveVisualSelection = (state: GameState): VisualSelection => {
   const regionId = state.navigation.currentRegionId;

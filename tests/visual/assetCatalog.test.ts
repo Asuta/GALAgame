@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { worldData } from '../../src/data/world';
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { cacheSceneEvent, createInitialState, enterRegion, enterScene, startEvent } from '../../src/state/store';
-import { resolveVisualSelection } from '../../src/visual/assetCatalog';
+import { collectEventImageReferences, resolveVisualSelection } from '../../src/visual/assetCatalog';
 
 describe('resolveVisualSelection', () => {
   it('keeps the first art pack aligned with the intended region and character set', () => {
@@ -191,6 +191,102 @@ describe('resolveVisualSelection', () => {
       character: null,
       locationLabel: '学校 / 教室',
       isGeneratedEventImage: true
+    });
+  });
+
+  it('collects scene and the most relevant character portraits for event image references', () => {
+    const state = createInitialState();
+    const scene = worldData.scenes.find((item) => item.id === 'classroom')!;
+    const event = buildFallbackSceneEvent({
+      scene,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    const references = collectEventImageReferences({
+      event: {
+        ...event,
+        cast: ['林澄', '周然'],
+        facts: ['周然刚刚在门口说话，林澄坐在窗边。']
+      },
+      currentRegionId: 'school',
+      worldData,
+      transcript: [
+        { label: '林澄', content: '你怎么来了？' },
+        { label: '周然', content: '我只是路过。' }
+      ]
+    });
+
+    expect(references).toEqual([
+      {
+        kind: 'scene',
+        label: '学校 / 教室',
+        url: '/assets/backgrounds/scene-classroom-main.png'
+      },
+      {
+        kind: 'character',
+        label: '林澄',
+        url: '/assets/characters/lin-cheng-half-body.png',
+        characterId: '林澄'
+      },
+      {
+        kind: 'character',
+        label: '周然',
+        url: '/assets/characters/zhou-ran-half-body.png',
+        characterId: '周然'
+      }
+    ]);
+  });
+
+  it('uses generated media portraits when collecting dynamic character references', () => {
+    const state = createInitialState();
+    const scene = worldData.scenes.find((item) => item.id === 'classroom')!;
+    const event = buildFallbackSceneEvent({
+      scene,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    const references = collectEventImageReferences({
+      event: {
+        ...event,
+        cast: ['沈听'],
+        facts: ['沈听站在教室门口。']
+      },
+      currentRegionId: 'school',
+      worldData: {
+        ...worldData,
+        characters: [
+          ...worldData.characters,
+          {
+            id: '沈听',
+            name: '沈听',
+            aliases: ['电影院女生'],
+            gender: '女',
+            identity: '转校生',
+            age: '17岁左右',
+            personality: '温和',
+            speakingStyle: '语气轻',
+            relationshipToPlayer: '刚认识',
+            hardRules: [],
+            imageUrl: 'media://character:沈听'
+          }
+        ]
+      },
+      transcript: [{ label: '沈听', content: '我可以坐这里吗？' }]
+    });
+
+    expect(references).toContainEqual({
+      kind: 'character',
+      label: '沈听',
+      url: 'media://character:沈听',
+      characterId: '沈听'
     });
   });
 });

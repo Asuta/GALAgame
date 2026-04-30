@@ -31,6 +31,18 @@ export interface ImageRuntimeConfig {
   model: string;
 }
 
+export interface EventImageReferenceInput {
+  kind: 'scene' | 'character' | 'reference';
+  label: string;
+  url: string;
+  characterId?: string;
+}
+
+export interface ReadImageUrlAsDataUrlOptions {
+  fetchImpl?: typeof fetch;
+  loadMediaBlob?: (key: string) => Promise<Blob | null>;
+}
+
 export interface BuildEventImagePromptInput {
   event: GeneratedEvent;
   scene: Scene | null;
@@ -159,8 +171,43 @@ export const normalizeReferenceImages = (referenceImages?: string[]): string[] =
 
 const resolveAssetUrl = (url: string): string => new URL(url, window.location.origin).toString();
 
-export const readImageUrlAsDataUrl = async (url: string, fetchImpl: typeof fetch = fetch): Promise<string> => {
-  const response = await fetchImpl(resolveAssetUrl(url));
+const STORED_MEDIA_URL_PREFIX = 'media://';
+
+const blobToDataUrl = async (blob: Blob): Promise<string> =>
+  await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('参考图转换失败。'));
+    reader.readAsDataURL(blob);
+  });
+
+export const readImageUrlAsDataUrl = async (
+  url: string,
+  options: ReadImageUrlAsDataUrlOptions = {}
+): Promise<string> => {
+  const value = String(url || '').trim();
+
+  if (value.startsWith('data:image/')) {
+    return value;
+  }
+
+  if (value.startsWith(STORED_MEDIA_URL_PREFIX)) {
+    const key = value.slice(STORED_MEDIA_URL_PREFIX.length);
+
+    if (!options.loadMediaBlob) {
+      throw new Error('参考图读取失败：缺少媒体读取器。');
+    }
+
+    const blob = await options.loadMediaBlob(key);
+
+    if (!blob) {
+      throw new Error(`参考图读取失败：找不到媒体 ${key}。`);
+    }
+
+    return await blobToDataUrl(blob);
+  }
+
+  const response = await (options.fetchImpl ?? fetch)(resolveAssetUrl(value));
 
   if (!response.ok) {
     throw new Error(`参考图读取失败：HTTP ${response.status}`);
@@ -169,12 +216,7 @@ export const readImageUrlAsDataUrl = async (url: string, fetchImpl: typeof fetch
   const contentType = response.headers.get('content-type') || 'image/png';
   const bytes = await response.arrayBuffer();
 
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('参考图转换失败。'));
-    reader.readAsDataURL(new Blob([bytes], { type: contentType }));
-  });
+  return await blobToDataUrl(new Blob([bytes], { type: contentType }));
 };
 
 export const extractGeneratedImageUrls = (responseBody: unknown): string[] => {
@@ -271,6 +313,35 @@ export const buildTaskImagePrompt = ({
   ].join('\n');
 };
 
+export const appendEventImageReferenceGuide = (prompt: string, references: EventImageReferenceInput[]): string => {
+  if (!references.length) {
+    return prompt;
+  }
+
+  const guideLines = references.map((reference, index) => {
+    const prefix = `第 ${index + 1} 张`;
+
+    if (reference.kind === 'scene') {
+      return `${prefix}是当前场景参考图「${reference.label}」，请保持地点、空间结构、光线和整体氛围一致。`;
+    }
+
+    if (reference.kind === 'character') {
+      return `${prefix}是角色「${reference.label}」的人物立绘参考，请保持发型、脸部识别度、服装和整体气质稳定。`;
+    }
+
+    return `${prefix}是画面参考图「${reference.label}」，请只提取与当前剧情有关的视觉信息。`;
+  });
+
+  return [
+    prompt.trim(),
+    '参考图说明：',
+    ...guideLines,
+    '参考图只用于保持地点和人物识别度，最终画面仍必须严格表现当前剧情这一刻。'
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
 export const buildCharacterPortraitPrompt = ({
   character,
   locationLabel = '',
@@ -318,16 +389,50 @@ export const requestGeneratedEventImage = async ({
   memorySummary = '',
   memoryFacts = [],
   prompt,
+  imageReferences,
   referenceImageUrls = [],
-  fetchImpl = fetch
-}: BuildEventImagePromptInput & { referenceImageUrls?: string[]; fetchImpl?: typeof fetch }): Promise<string> => {
+  fetchImpl = fetch,
+  loadMediaBlob,
+  onReferenceImageWarning
+}: BuildEventImagePromptInput & {
+  imageReferences?: EventImageReferenceInput[];
+  referenceImageUrls?: string[];
+  fetchImpl?: typeof fetch;
+  loadMediaBlob?: (key: string) => Promise<Blob | null>;
+  onReferenceImageWarning?: (message: string) => void;
+}): Promise<string> => {
   const config = getImageRuntimeConfig();
-  const referenceImages = await Promise.all(
-    referenceImageUrls.slice(0, 3).map((imageUrl) => readImageUrlAsDataUrl(imageUrl, fetchImpl))
+  const referenceInputs =
+    imageReferences?.length
+      ? imageReferences
+      : referenceImageUrls.map((url, index) => ({
+          kind: 'reference' as const,
+          label: `参考图 ${index + 1}`,
+          url
+        }));
+  const referenceResults = await Promise.all(
+    referenceInputs.slice(0, 3).map(async (reference) => {
+      try {
+        return {
+          reference,
+          image: await readImageUrlAsDataUrl(reference.url, { fetchImpl, loadMediaBlob })
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '参考图读取失败。';
+        onReferenceImageWarning?.(`${reference.label}：${message}`);
+        return null;
+      }
+    })
   );
+  const loadedReferences = referenceResults.filter((item): item is NonNullable<typeof item> => !!item);
+  const referenceImages = loadedReferences.map((item) => item.image);
+  const eventPrompt = prompt?.trim() || buildEventImagePrompt({ event, scene, locationLabel, transcript, memorySummary, memoryFacts });
   const payload = buildImageGenerationPayload({
     model: config.model,
-    prompt: prompt?.trim() || buildEventImagePrompt({ event, scene, locationLabel, transcript, memorySummary, memoryFacts }),
+    prompt: appendEventImageReferenceGuide(
+      eventPrompt,
+      loadedReferences.map((item) => item.reference)
+    ),
     referenceImages
   });
   const response = await fetchImpl(config.endpoint, {

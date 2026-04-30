@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { worldData } from '../../src/data/world';
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import {
+  appendEventImageReferenceGuide,
   buildEventImagePrompt,
   buildCharacterPortraitPrompt,
   buildImageGenerationPayload,
@@ -367,5 +368,109 @@ describe('imageClient', () => {
     expect(payload.input.messages[0].content[0].image).toMatch(/^data:image\/png;base64,/);
     expect(payload.input.messages[0].content[1].image).toMatch(/^data:image\/png;base64,/);
     expect(payload.input.messages[0].content[2].text).toContain('学校 / 教室');
+    expect(payload.input.messages[0].content[2].text).toContain('参考图说明');
+    expect(payload.input.messages[0].content[2].text).toContain('第 1 张是画面参考图');
+  });
+
+  it('reads stored media references and labels them in the event image prompt guide', async () => {
+    vi.stubEnv('VITE_IMAGE_API_BASE_URL', 'https://example.com/v1/images/generations');
+    vi.stubEnv('VITE_IMAGE_API_KEY', 'image-key');
+
+    const scene = worldData.scenes.find((item) => item.id === 'classroom')!;
+    const event = buildFallbackSceneEvent({
+      scene,
+      locationLabel: '学校 / 教室',
+      memorySummary: '刚开局',
+      memoryFacts: [],
+      timeLabel: '傍晚 18:00',
+      timeSlot: 'evening'
+    });
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ data: [{ url: 'https://example.com/generated.png' }] }), { status: 200 }));
+    const loadMediaBlob = vi.fn(async (key: string) =>
+      key === 'character:沈听' ? new Blob(['portrait-bytes'], { type: 'image/png' }) : null
+    );
+
+    await requestGeneratedEventImage({
+      event,
+      scene,
+      locationLabel: '学校 / 教室',
+      imageReferences: [
+        {
+          kind: 'character',
+          label: '沈听',
+          url: 'media://character:沈听',
+          characterId: '沈听'
+        }
+      ],
+      fetchImpl,
+      loadMediaBlob
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    expect(loadMediaBlob).toHaveBeenCalledWith('character:沈听');
+    expect(payload.input.messages[0].content[0].image).toMatch(/^data:image\/png;base64,/);
+    expect(payload.input.messages[0].content[1].text).toContain('第 1 张是角色「沈听」的人物立绘参考');
+  });
+
+  it('skips broken reference images instead of failing the whole event image request', async () => {
+    vi.stubEnv('VITE_IMAGE_API_BASE_URL', 'https://example.com/v1/images/generations');
+    vi.stubEnv('VITE_IMAGE_API_KEY', 'image-key');
+
+    const scene = worldData.scenes.find((item) => item.id === 'classroom')!;
+    const event = buildFallbackSceneEvent({
+      scene,
+      locationLabel: '学校 / 教室',
+      memorySummary: '刚开局',
+      memoryFacts: [],
+      timeLabel: '傍晚 18:00',
+      timeSlot: 'evening'
+    });
+    const warnings: string[] = [];
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('missing', { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ url: 'https://example.com/generated.png' }] }), { status: 200 }));
+
+    await expect(
+      requestGeneratedEventImage({
+        event,
+        scene,
+        locationLabel: '学校 / 教室',
+        imageReferences: [
+          {
+            kind: 'scene',
+            label: '学校 / 教室',
+            url: '/assets/missing.png'
+          }
+        ],
+        fetchImpl,
+        onReferenceImageWarning: (message) => warnings.push(message)
+      })
+    ).resolves.toBe('https://example.com/generated.png');
+
+    const payload = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    expect(warnings[0]).toContain('学校 / 教室：参考图读取失败：HTTP 404');
+    expect(payload.input.messages[0].content).toEqual([
+      expect.objectContaining({
+        text: expect.stringContaining('学校 / 教室')
+      })
+    ]);
+    expect(payload.input.messages[0].content[0].text).not.toContain('参考图说明');
+  });
+
+  it('appends clear reference-image instructions to a prompt', () => {
+    expect(
+      appendEventImageReferenceGuide('当前剧情画面。', [
+        { kind: 'scene', label: '学校 / 教室', url: '/scene.png' },
+        { kind: 'character', label: '林澄', url: '/lin.png', characterId: '林澄' }
+      ])
+    ).toContain('第 1 张是当前场景参考图「学校 / 教室」');
+    expect(
+      appendEventImageReferenceGuide('当前剧情画面。', [
+        { kind: 'scene', label: '学校 / 教室', url: '/scene.png' },
+        { kind: 'character', label: '林澄', url: '/lin.png', characterId: '林澄' }
+      ])
+    ).toContain('第 2 张是角色「林澄」的人物立绘参考');
   });
 });

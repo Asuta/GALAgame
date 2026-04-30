@@ -862,10 +862,20 @@ describe('bindUi scene switching', () => {
     expect(requestGeneratedEventImageMock.mock.calls[0][0].transcript).toEqual([]);
     expect(requestGeneratedEventImageMock.mock.calls[0][0].memorySummary).toContain('你刚开始');
     expect(requestGeneratedEventImageMock.mock.calls[0][0].prompt).toContain('生成的固定生图提示词');
-    expect(requestGeneratedEventImageMock.mock.calls[0][0].referenceImageUrls).toEqual([
-      '/assets/backgrounds/scene-classroom-main.png',
-      '/assets/characters/lin-cheng-half-body.png'
+    expect(requestGeneratedEventImageMock.mock.calls[0][0].imageReferences).toEqual([
+      {
+        kind: 'scene',
+        label: '学校 / 教室',
+        url: '/assets/backgrounds/scene-classroom-main.png'
+      },
+      {
+        kind: 'character',
+        label: '林澄',
+        url: '/assets/characters/lin-cheng-half-body.png',
+        characterId: '林澄'
+      }
     ]);
+    expect(requestGeneratedEventImageMock.mock.calls[0][0].loadMediaBlob).toEqual(expect.any(Function));
     expect(document.querySelector('[data-testid="visual-background"]')?.getAttribute('src')).toBe(
       'https://example.com/generated-event.png'
     );
