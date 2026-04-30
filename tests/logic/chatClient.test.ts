@@ -29,6 +29,7 @@ import {
   requestStoryReply,
   requestStoryReplyStream,
   requestTaskImagePrompt,
+  rewriteEventImagePromptObjectively,
   stripEventEndMarker
 } from '../../src/logic/chatClient';
 import { worldData } from '../../src/data/world';
@@ -109,10 +110,24 @@ describe('chatClient helpers', () => {
     expect(payload.messages[0].content).toContain('只输出最终生图提示词');
     expect(payload.messages[0].content).toContain('二次元动漫视觉小说 CG 插画风格');
     expect(payload.messages[0].content).toContain('禁止写成真实照片');
+    expect(payload.messages[0].content).toContain('禁止使用“你、我、他、她、TA、对方”等人称代词');
+    expect(payload.messages[0].content).toContain('描述玩家时写“主角（玩家角色）”');
     expect(payload.messages[1].content).toContain('学校 / 教室');
     expect(payload.messages[1].content).toContain('林澄把练习册合上');
     expect(payload.messages[1].content).toContain('你：你看起来有点心事。');
+    expect(payload.messages[1].content).toContain('最终提示词不得出现“你、我、他、她、TA、对方”这些代词');
     expect(payload.messages[1].content).toContain('不要真实照片或写实摄影');
+  });
+
+  it('rewrites event image prompts into objective character descriptions', () => {
+    expect(
+      rewriteEventImagePromptObjectively(
+        '横屏 16:10 构图，你站在她对侧，她被你握住手腕，我的视角靠近对方，其他学生在窗外经过。',
+        '林澄'
+      )
+    ).toBe(
+      '横屏 16:10 构图，主角（玩家角色）站在林澄对侧，林澄被主角（玩家角色）握住手腕，主角（玩家角色）的视角靠近林澄，其他学生在窗外经过。'
+    );
   });
 
   it('uses the provided model name as request target', () => {
@@ -631,10 +646,21 @@ describe('chatClient helpers', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        new Response(JSON.stringify({ choices: [{ message: { content: '竖屏视觉小说 CG，林澄在傍晚教室窗边合上练习册。' } }] }), {
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '横屏 16:10 视觉小说 CG，你站在她对侧，她低头被你握住手腕。'
+                }
+              }
+            ]
+          }),
+          {
           status: 200,
           headers: { 'content-type': 'application/json' }
-        })
+          }
+        )
       )
     );
 
@@ -652,7 +678,7 @@ describe('chatClient helpers', () => {
         memoryFacts: [],
         transcript: ['你：你看起来有点心事。']
       })
-    ).resolves.toContain('林澄');
+    ).resolves.toBe('横屏 16:10 视觉小说 CG，主角（玩家角色）站在林澄对侧，林澄低头被主角（玩家角色）握住手腕。');
   });
 
   it('requests a task image prompt from the chat model', async () => {

@@ -124,24 +124,30 @@ describe('game save bundles', () => {
         ...oldState.world,
         data: {
           ...oldState.world.data,
-          characters: oldState.world.data.characters.map((character) => ({
-            id: character.id,
-            name: character.name,
-            gender: character.gender,
-            identity: character.identity,
-            age: character.age,
-            personality: character.personality,
-            speakingStyle: character.speakingStyle,
-            relationshipToPlayer: character.relationshipToPlayer,
-            hardRules: character.hardRules
-          }))
+          characters: oldState.world.data.characters
+            .filter((character) => character.id !== '主角')
+            .map((character) => ({
+              id: character.id,
+              name: character.name,
+              gender: character.gender,
+              identity: character.identity,
+              age: character.age,
+              personality: character.personality,
+              speakingStyle: character.speakingStyle,
+              relationshipToPlayer: character.relationshipToPlayer,
+              hardRules: character.hardRules
+            }))
         }
       }
     });
 
+    const playerCharacter = restored.world.data.characters.find((character) => character.id === '主角');
     const linCheng = restored.world.data.characters.find((character) => character.id === '林澄');
     const zhouRan = restored.world.data.characters.find((character) => character.id === '周然');
 
+    expect(playerCharacter?.imageUrl).toBe('/assets/characters/player-protagonist-half-body.png');
+    expect(playerCharacter?.aliases).toContain('你');
+    expect(playerCharacter?.firstMetLocation).toBe('主角家');
     expect(linCheng?.imageUrl).toBe('/assets/characters/lin-cheng-half-body.png');
     expect(linCheng?.firstMetLocation).toBe('学校');
     expect(linCheng?.currentLook).toContain('校服半身立绘');
@@ -176,11 +182,13 @@ describe('game save bundles', () => {
 
     expect(manifest).toContain('asset:map:city-overview');
     expect(manifest).toContain('asset:scene:classroom');
+    expect(manifest).toContain('asset:character:player-protagonist');
     expect(manifest).toContain('asset:character:lin-cheng');
     expect(manifest).not.toContain('data:image/png;base64,QUJD');
     expect(manifest).not.toContain('eventA');
     expect(zip.file('media/asset/map/city-overview.png')).not.toBeNull();
     expect(zip.file('media/asset/scene/classroom.png')).not.toBeNull();
+    expect(zip.file('media/asset/character/player-protagonist.png')).not.toBeNull();
     expect(zip.file('media/asset/character/lin-cheng.png')).not.toBeNull();
     expect(zip.file('media/event/eventA.png')).toBeNull();
     expect(savedMedia.get('asset:scene:classroom')?.type).toBe('image/png');

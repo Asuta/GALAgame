@@ -120,7 +120,7 @@ export const normalizeWorldData = (value: unknown): WorldData => {
       })).filter((scene) => scene.id && scene.regionId && scene.name)
     : [];
 
-  const characters = Array.isArray(value.characters)
+  const normalizedCharacters = Array.isArray(value.characters)
     ? value.characters.filter(isRecord).map((character) => {
         const normalizedCharacter: CharacterProfile = {
           id: typeof character.id === 'string' ? character.id : '',
@@ -160,6 +160,15 @@ export const normalizeWorldData = (value: unknown): WorldData => {
         return hydrateCharacterFromBaseline(normalizedCharacter, baseline);
       }).filter((character) => character.id && character.name)
     : [];
+  const characters = [
+    ...normalizedCharacters,
+    ...baselineCharacters.filter(
+      (baselineCharacter) =>
+        !normalizedCharacters.some(
+          (character) => character.id === baselineCharacter.id || character.name === baselineCharacter.name
+        )
+    )
+  ];
 
   return {
     ...(typeof value.mapImageUrl === 'string' ? { mapImageUrl: value.mapImageUrl } : {}),

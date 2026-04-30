@@ -898,6 +898,29 @@ export const parseSceneEventSeed = ({
   };
 };
 
+const splitCastNames = (castName: string): string[] =>
+  castName
+    .split(/[、,，/]/)
+    .map((value) => value.trim())
+    .filter((value) => value && value !== '旁白' && value !== '无固定角色');
+
+export const rewriteEventImagePromptObjectively = (prompt: string, castName: string): string => {
+  const primaryCastName = splitCastNames(castName)[0] ?? '相关角色';
+  const playerName = '主角（玩家角色）';
+
+  return prompt
+    .trim()
+    .replace(/其他/g, '__OTHER_CHARACTERS__')
+    .replace(/你们/g, `${playerName}与在场角色`)
+    .replace(/我们/g, `${playerName}与在场角色`)
+    .replace(/他们|她们|TA们|ta们/g, '在场角色')
+    .replace(/你/g, playerName)
+    .replace(/我/g, playerName)
+    .replace(/他|她|TA|ta/g, primaryCastName)
+    .replace(/对方/g, primaryCastName)
+    .replace(/__OTHER_CHARACTERS__/g, '其他');
+};
+
 export const buildEventImagePromptRequest = ({
   model,
   systemPrompt,
@@ -921,6 +944,9 @@ export const buildEventImagePromptRequest = ({
         '你只输出最终生图提示词，不要解释，不要 JSON，不要 Markdown。',
         '提示词必须描述当前剧情这一刻的可视画面，而不是复述所有上下文。',
         '必须保留地点、主要角色、当前动作/距离/情绪、构图、光影和画风要求。',
+        '最终生图提示词必须使用客观镜头语言，禁止使用“你、我、他、她、TA、对方”等人称代词。',
+        '描述玩家时写“主角（玩家角色）”；描述人物卡角色时直接写角色名，例如“林澄”“周然”。',
+        '如果上下文里原本有“你：”这样的玩家发言，只能理解为“主角（玩家角色）”，最终提示词里不要保留“你：”。',
         '构图必须是横屏 16:10，适合偏横向的视觉小说图片窗口，避免竖屏全身肖像导致裁切。',
         '画风必须统一为高质量二次元动漫视觉小说 CG 插画风格，禁止写成真实照片、真人摄影、写实摄影、电影剧照、3D 渲染或欧美写实风格。',
         '不要生成文字、UI、水印、logo。'
@@ -942,6 +968,8 @@ export const buildEventImagePromptRequest = ({
         '',
         '请把以上上下文浓缩成一个适合文生图/图生图的中文提示词。',
         '提示词需要像导演分镜一样明确“此刻画面”，可以补充合理动作和表情，但不要加入上下文没有支撑的新剧情。',
+        `最终提示词里出现玩家时必须写作“主角（玩家角色）”；出现主要角色时必须写具体名字：${castName || '无固定角色'}。`,
+        '最终提示词不得出现“你、我、他、她、TA、对方”这些代词。',
         '提示词里必须明确写出“横屏 16:10 构图，适合视觉小说横向画面窗口”。',
         '提示词里必须明确写出“二次元动漫视觉小说 CG 风格”，并明确不要真实照片或写实摄影。',
         '输出一段完整提示词，长度控制在 300 字以内。'
@@ -1816,7 +1844,7 @@ export const requestEventImagePrompt = async (
   }
 
   const data = (await response.json()) as ChatCompletionResponse;
-  return extractAssistantReply(data);
+  return rewriteEventImagePromptObjectively(extractAssistantReply(data), input.castName);
 };
 
 export async function* requestStoryReplyStream(

@@ -25,7 +25,7 @@ describe('resolveVisualSelection', () => {
       'balcony',
       'entryway'
     ]);
-    expect(worldData.characters.map((character) => character.id)).toEqual(['林澄', '周然']);
+    expect(worldData.characters.map((character) => character.id)).toEqual(['主角', '林澄', '周然']);
   });
 
   it('returns the city map before a region is selected', () => {
@@ -288,6 +288,53 @@ describe('resolveVisualSelection', () => {
       url: 'media://character:沈听',
       characterId: '沈听'
     });
+  });
+
+  it('includes the player character portrait when the event references the player', () => {
+    const state = createInitialState();
+    const scene = worldData.scenes.find((item) => item.id === 'classroom')!;
+    const event = buildFallbackSceneEvent({
+      scene,
+      locationLabel: '学校 / 教室',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+
+    const references = collectEventImageReferences({
+      event: {
+        ...event,
+        cast: ['林澄'],
+        facts: ['林澄站在主角（玩家角色）对侧。']
+      },
+      currentRegionId: 'school',
+      worldData,
+      transcript: [
+        { label: '你', content: '今天怎么还没回家？' },
+        { label: '林澄', content: '我想再坐一会儿。' }
+      ]
+    });
+
+    expect(references).toEqual([
+      {
+        kind: 'scene',
+        label: '学校 / 教室',
+        url: '/assets/backgrounds/scene-classroom-main.png'
+      },
+      {
+        kind: 'character',
+        label: '林澄',
+        url: '/assets/characters/lin-cheng-half-body.png',
+        characterId: '林澄'
+      },
+      {
+        kind: 'character',
+        label: '主角（玩家角色）',
+        url: '/assets/characters/player-protagonist-half-body.png',
+        characterId: '主角'
+      }
+    ]);
   });
 });
 

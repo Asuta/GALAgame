@@ -1279,7 +1279,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         model: state.settings.currentModel,
         locationLabel: eventForImage.locationLabel,
         eventTitle: eventForImage.title,
-        castName: eventForImage.cast[0] || '旁白',
+        castName: eventForImage.cast.length ? eventForImage.cast.join('、') : '旁白',
         eventPhase: eventForImage.currentPhase,
         sceneDescription: scene?.description ?? eventForImage.premise,
         openingState: eventForImage.openingState,

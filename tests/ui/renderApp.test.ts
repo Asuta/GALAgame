@@ -503,10 +503,15 @@ describe('renderApp', () => {
 
     expect(document.querySelector('[data-testid="character-page"]')).not.toBeNull();
     expect(document.body.textContent).toContain('人物图鉴');
+    expect(document.body.textContent).toContain('主角（玩家角色）');
+    expect(document.body.textContent).toContain('玩家扮演的高中男生');
     expect(document.body.textContent).toContain('沈听');
     expect(document.body.textContent).toContain('电影院门口遇到的同龄女生');
     expect(document.body.textContent).toContain('她在电影院门口帮玩家捡起票根');
     expect(document.querySelectorAll('[data-testid="character-profile-card"]').length).toBeGreaterThanOrEqual(3);
+    expect(document.querySelector('img[alt="主角（玩家角色）的人物立绘"]')?.getAttribute('src')).toBe(
+      '/assets/characters/player-protagonist-half-body.png'
+    );
     expect(document.querySelector('img[alt="沈听的人物立绘"]')?.getAttribute('data-media-src')).toBe('media://character:沈听');
     expect(document.body.textContent).toContain('主角状态');
     expect(document.body.textContent).toContain('当前资产');

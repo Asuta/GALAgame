@@ -873,6 +873,12 @@ describe('bindUi scene switching', () => {
         label: '林澄',
         url: '/assets/characters/lin-cheng-half-body.png',
         characterId: '林澄'
+      },
+      {
+        kind: 'character',
+        label: '主角（玩家角色）',
+        url: '/assets/characters/player-protagonist-half-body.png',
+        characterId: '主角'
       }
     ]);
     expect(requestGeneratedEventImageMock.mock.calls[0][0].loadMediaBlob).toEqual(expect.any(Function));

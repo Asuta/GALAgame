@@ -366,6 +366,27 @@ const ORIGINAL_WORLD_DATA: WorldData = {
   ],
   characters: [
     {
+      id: '主角',
+      name: '主角（玩家角色）',
+      aliases: ['主角', '玩家', '玩家角色', '你'],
+      gender: '男',
+      identity: '玩家扮演的高中男生，故事视角的核心人物',
+      age: '17岁左右',
+      personality: '温和、敏感、容易被细节触动，会在关系推进时显得有些笨拙但真诚',
+      speakingStyle: '第一反应偏克制，表达直接但不过分夸张，常用短句确认对方的情绪',
+      relationshipToPlayer: '玩家本人',
+      hardRules: ['这是玩家自己的角色', '不要在人物收集弹窗里当作新人物生成', '外貌和性别默认保持稳定，除非玩家明确修改'],
+      appearance: '黑色短发，普通高中男生校服，身形清瘦，神情温和，带一点少年感。',
+      currentLook: '穿深色校服外套和白衬衫的半身立绘，黑色短发，表情温和。',
+      knownFacts: ['主角是玩家扮演的角色', '主角默认是高中男生', '主角是故事视角的核心人物'],
+      firstMetAt: '原版初始数据',
+      lastSeenAt: '原版初始数据',
+      firstMetLocation: '主角家',
+      encounterCount: 1,
+      source: 'baseline',
+      imageUrl: '/assets/characters/player-protagonist-half-body.png'
+    },
+    {
       id: '林澄',
       name: '林澄',
       gender: '女',

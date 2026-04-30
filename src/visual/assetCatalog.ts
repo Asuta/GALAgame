@@ -31,12 +31,14 @@ const SCENE_BACKGROUNDS = {
 type VisualSceneId = keyof typeof SCENE_BACKGROUNDS;
 
 const CHARACTER_PORTRAITS = {
+  主角: '/assets/characters/player-protagonist-half-body.png',
   林澄: '/assets/characters/lin-cheng-half-body.png',
   周然: '/assets/characters/zhou-ran-half-body.png'
 } as const;
 type VisualCharacterId = keyof typeof CHARACTER_PORTRAITS;
 
 const CHARACTER_ASSET_KEYS: Record<VisualCharacterId, string> = {
+  主角: 'player-protagonist',
   林澄: 'lin-cheng',
   周然: 'zhou-ran'
 };
