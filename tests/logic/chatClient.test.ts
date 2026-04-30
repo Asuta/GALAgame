@@ -445,8 +445,9 @@ describe('chatClient helpers', () => {
       playerStatePrompt: '【当前权威角色数据】\n金钱：100'
     });
 
-    expect(payload.messages[0].content).toContain('提取值得持久化的新人物卡');
-    expect(payload.messages[0].content).toContain('无名路人');
+    expect(payload.messages[0].content).toContain('整理本次实际登场过的人物候选');
+    expect(payload.messages[0].content).toContain('最终是否生成信息由玩家手动选择');
+    expect(payload.messages[0].content).toContain('短暂登场人物 shouldPersist=false 但仍要列出');
     expect(payload.messages[1].content).toContain('上下文类型：任务');
     expect(payload.messages[1].content).toContain('电影院的偶遇');
     expect(payload.messages[1].content).toContain('id=林澄');

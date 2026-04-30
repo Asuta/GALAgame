@@ -133,6 +133,35 @@ export interface CharacterProfile {
   imageUrl?: string;
 }
 
+export interface CharacterDiscoveryCandidate {
+  name: string;
+  aliases: string[];
+  gender: string;
+  identity: string;
+  age: string;
+  personality: string;
+  speakingStyle: string;
+  relationshipToPlayer: string;
+  appearance: string;
+  currentLook: string;
+  knownFacts: string[];
+  hardRules: string[];
+  shouldPersist: boolean;
+  confidence: number;
+  existingCharacterId?: string;
+  persistenceReason?: string;
+}
+
+export interface CharacterDiscoveryReview {
+  id: string;
+  contextType: 'event' | 'task';
+  title: string;
+  locationLabel: string;
+  timeLabel: string;
+  summary: string;
+  candidates: CharacterDiscoveryCandidate[];
+}
+
 export interface WorldData {
   mapImageUrl?: string;
   regions: Region[];

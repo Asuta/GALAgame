@@ -125,6 +125,84 @@ const renderSettlementEffectsCard = (effects: GameState['settlement']['lastEffec
   `;
 };
 
+export const renderCharacterDiscoveryReview = (state: GameState): string => {
+  const review = state.characterDiscovery.pendingReview;
+
+  if (!review) {
+    return '';
+  }
+
+  const candidates = review.candidates
+    .map((candidate, index) => {
+      const recommendation = candidate.shouldPersist ? '推荐生成' : '短暂登场';
+      const confidenceLabel = `${Math.round(candidate.confidence * 100)}%`;
+      const facts = candidate.knownFacts.length
+        ? candidate.knownFacts.slice(0, 3).map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')
+        : '<span>暂无更多记录</span>';
+
+      return `
+        <label class="character-discovery-option" data-testid="character-discovery-option">
+          <input
+            type="checkbox"
+            data-character-discovery-index="${index}"
+            ${state.characterDiscovery.isProcessing ? 'disabled' : ''}
+          />
+          <div class="character-discovery-option-body">
+            <div class="character-discovery-option-title">
+              <strong>${escapeHtml(candidate.name)}</strong>
+              <span>${escapeHtml(recommendation)} · ${escapeHtml(confidenceLabel)}</span>
+            </div>
+            <p>${escapeHtml(candidate.identity)}</p>
+            <dl>
+              <div>
+                <dt>关系</dt>
+                <dd>${escapeHtml(candidate.relationshipToPlayer || '暂无')}</dd>
+              </div>
+              <div>
+                <dt>样貌</dt>
+                <dd>${escapeHtml(candidate.currentLook || candidate.appearance || '暂无')}</dd>
+              </div>
+            </dl>
+            <div class="character-discovery-facts">${facts}</div>
+          </div>
+        </label>
+      `;
+    })
+    .join('');
+
+  return `
+    <aside class="character-discovery-overlay" data-testid="character-discovery-review" aria-live="polite">
+      <section class="character-discovery-panel">
+        <header class="character-discovery-header">
+          <div>
+            <p>${escapeHtml(review.contextType === 'event' ? '事件结束' : '任务结束')}</p>
+            <h2>选择要生成信息的人物</h2>
+          </div>
+          <span>${review.candidates.length} 位登场人物</span>
+        </header>
+        <div class="character-discovery-context">
+          <strong>${escapeHtml(review.title)}</strong>
+          <span>${escapeHtml(review.locationLabel)} · ${escapeHtml(review.timeLabel)}</span>
+        </div>
+        <div class="character-discovery-list">
+          ${candidates}
+        </div>
+        ${
+          state.characterDiscovery.error
+            ? `<div class="event-image-error" role="alert">${escapeHtml(state.characterDiscovery.error)}</div>`
+            : ''
+        }
+        <div class="character-discovery-actions">
+          <button class="settings-action-button decision-secondary" data-action="skip-character-discovery" ${state.characterDiscovery.isProcessing ? 'disabled' : ''}>暂不生成</button>
+          <button class="settings-action-button" data-action="confirm-character-discovery" ${state.characterDiscovery.isProcessing ? 'disabled' : ''}>
+            ${state.characterDiscovery.isProcessing ? '生成中...' : '生成所选人物'}
+          </button>
+        </div>
+      </section>
+    </aside>
+  `;
+};
+
 export const createAppMarkup = (state: GameState): string => {
   const currentRegion = getCurrentRegion(state);
   const currentScene = getCurrentScene(state);

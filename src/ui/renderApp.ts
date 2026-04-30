@@ -1,6 +1,6 @@
 import type { GameState } from '../state/store';
-import { createAppMarkup } from './templates';
+import { createAppMarkup, renderCharacterDiscoveryReview } from './templates';
 
 export const renderApp = (root: HTMLDivElement, state: GameState): void => {
-  root.innerHTML = createAppMarkup(state);
+  root.innerHTML = createAppMarkup(state) + renderCharacterDiscoveryReview(state);
 };

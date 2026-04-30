@@ -277,7 +277,7 @@ describe('bindUi scene switching', () => {
     expect(document.body.textContent).not.toContain('放学后的空教室');
   });
 
-  it('collects a new character card when an event ends', async () => {
+  it('lets the player choose which event characters become profile cards', async () => {
     requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
       buildFallbackSceneEvent({
         scene,
@@ -292,6 +292,23 @@ describe('bindUi scene switching', () => {
       yield '旁白：体育馆门口的许夏朝你挥了挥手。[EVENT_END]';
     });
     requestCharacterDiscoveriesMock.mockResolvedValueOnce([
+      {
+        name: '林澄',
+        aliases: [],
+        gender: '女',
+        identity: '同班同学',
+        age: '17岁',
+        personality: '比之前更主动，也会在热闹里偷偷观察玩家',
+        speakingStyle: '轻声，但比平时更直接',
+        relationshipToPlayer: '熟悉的同学，关系更近了一点',
+        appearance: '校服外套，发梢被晨风吹乱',
+        currentLook: '站在体育馆门口，看见玩家后笑了一下',
+        knownFacts: ['林澄在体育馆门口再次遇见玩家'],
+        hardRules: ['保持温柔克制的校园恋爱气质'],
+        shouldPersist: true,
+        confidence: 0.95,
+        existingCharacterId: '林澄'
+      },
       {
         name: '许夏',
         aliases: [],
@@ -320,13 +337,31 @@ describe('bindUi scene switching', () => {
     textarea.value = '我和新遇到的人聊了几句。';
     (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
 
-    await waitForText('许夏');
+    await waitForText('选择要生成信息的人物');
+    expect(requestCharacterDiscoveriesMock).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-testid="character-discovery-review"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('体育馆里遇到的高年级学生');
+    const optionText = Array.from(document.querySelectorAll('[data-testid="character-discovery-option"]'))
+      .map((option) => option.textContent ?? '')
+      .join('\n');
+    expect(optionText).toContain('许夏');
+    expect(optionText).not.toContain('林澄');
+    expect(requestGeneratedCharacterImageMock).not.toHaveBeenCalled();
+
+    const storedAfterReview = loadStoredGameState();
+    const linChengAfterReview = storedAfterReview?.world.data.characters.find((character) => character.id === '林澄');
+    expect(linChengAfterReview?.knownFacts).toContain('林澄在体育馆门口再次遇见玩家');
+    expect(linChengAfterReview?.relationshipToPlayer).toBe('熟悉的同学，关系更近了一点');
+
+    (document.querySelector('[data-character-discovery-index="0"]') as HTMLInputElement).checked = true;
+    (document.querySelector('[data-action="confirm-character-discovery"]') as HTMLButtonElement).click();
+
     for (let index = 0; index < 40 && requestGeneratedCharacterImageMock.mock.calls.length === 0; index += 1) {
       await waitForStreamFrame();
       await flushUi();
     }
-    expect(requestCharacterDiscoveriesMock).toHaveBeenCalledOnce();
     expect(requestGeneratedCharacterImageMock).toHaveBeenCalledOnce();
+    await waitForNoElement('[data-testid="character-discovery-review"]');
 
     (document.querySelector('[data-action="open-character"]') as HTMLButtonElement).click();
     await flushUi();
@@ -708,6 +743,82 @@ describe('bindUi scene switching', () => {
     expect(document.body.textContent).toContain('结算变化：悟性 +1；资产 +300。');
   });
 
+  it('ends an event after time settlement while character discovery continues in the background', async () => {
+    const settlementDeferred = createDeferred<{
+      minutesElapsed: number;
+      summary: string;
+      effects: [];
+    }>();
+    const discoveryDeferred = createDeferred<Parameters<typeof requestCharacterDiscoveriesMock.mockResolvedValueOnce>[0]>();
+    requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
+      buildFallbackSceneEvent({
+        scene,
+        locationLabel,
+        memorySummary,
+        memoryFacts,
+        timeLabel,
+        timeSlot
+      })
+    );
+    requestStoryReplyStreamMock.mockImplementation(async function* () {
+      yield '旁白：你们把这一幕暂时收住。[EVENT_END]';
+    });
+    requestEventTimeSettlementMock.mockReturnValueOnce(settlementDeferred.promise);
+    requestCharacterDiscoveriesMock.mockReturnValueOnce(discoveryDeferred.promise);
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-region-id="school"]') as HTMLButtonElement).click();
+    (document.querySelector('[data-scene-id="classroom"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    textarea.value = '那今天就先这样。';
+    (document.querySelector('[data-action="send"]') as HTMLButtonElement).click();
+
+    for (let index = 0; index < 40 && requestCharacterDiscoveriesMock.mock.calls.length === 0; index += 1) {
+      await waitForStreamFrame();
+      await flushUi();
+    }
+
+    expect(requestEventTimeSettlementMock).toHaveBeenCalledOnce();
+    expect(requestCharacterDiscoveriesMock).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-testid="character-discovery-review"]')).toBeNull();
+
+    settlementDeferred.resolve({
+      minutesElapsed: 12,
+      summary: '这段事件先完成了时间结算。',
+      effects: []
+    });
+    await waitForText('这段事件先完成了时间结算。');
+
+    expect(document.querySelector('[data-testid="character-discovery-review"]')).toBeNull();
+
+    discoveryDeferred.resolve([
+      {
+        name: '程雪',
+        aliases: [],
+        gender: '女',
+        identity: '教学楼门口遇到的同级生',
+        age: '17岁左右',
+        personality: '安静、观察力强',
+        speakingStyle: '短句，语气轻',
+        relationshipToPlayer: '刚认识',
+        appearance: '浅色针织衫，抱着练习册',
+        currentLook: '站在教学楼门口，抱着练习册看向玩家',
+        knownFacts: ['她在事件尾声短暂出现'],
+        hardRules: ['保持安静敏锐的气质'],
+        shouldPersist: true,
+        confidence: 0.86
+      }
+    ]);
+
+    await waitForText('选择要生成信息的人物');
+    expect(document.querySelector('[data-testid="character-discovery-review"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('程雪');
+    expect(requestGeneratedCharacterImageMock).not.toHaveBeenCalled();
+  });
+
   it('generates an event image from the waiting event and uses it as the visual background', async () => {
     const imageDeferred = createDeferred<string>();
     requestGeneratedEventImageMock.mockReturnValueOnce(imageDeferred.promise);
@@ -948,7 +1059,7 @@ describe('bindUi scene switching', () => {
     expect(document.querySelector('[data-testid="decision-task-visual-image"]')?.getAttribute('src')).toBe('https://example.com/generated-task.png');
   });
 
-  it('collects a new character card when a task completes', async () => {
+  it('lets the player choose which task characters become profile cards', async () => {
     requestTaskResultMock.mockResolvedValueOnce({
       summary: '你在电影院门口遇见了沈听，她帮你捡起掉在地上的票根。',
       facts: ['沈听在电影院门口帮了你一次'],
@@ -982,14 +1093,21 @@ describe('bindUi scene switching', () => {
     contentInput.value = '去电影院看一场电影';
     (document.querySelector('[data-action="start-task"]') as HTMLButtonElement).click();
 
+    await waitForText('选择要生成信息的人物');
+    expect(requestCharacterDiscoveriesMock).toHaveBeenCalledOnce();
+    expect(requestCharacterDiscoveriesMock.mock.calls[0][0].contextType).toBe('task');
+    expect(document.body.textContent).toContain('沈听');
+    expect(requestGeneratedCharacterImageMock).not.toHaveBeenCalled();
+
+    (document.querySelector('[data-character-discovery-index="0"]') as HTMLInputElement).checked = true;
+    (document.querySelector('[data-action="confirm-character-discovery"]') as HTMLButtonElement).click();
+
     for (let index = 0; index < 40 && requestGeneratedCharacterImageMock.mock.calls.length === 0; index += 1) {
       await waitForStreamFrame();
       await flushUi();
     }
-
-    expect(requestCharacterDiscoveriesMock).toHaveBeenCalledOnce();
-    expect(requestCharacterDiscoveriesMock.mock.calls[0][0].contextType).toBe('task');
     expect(requestGeneratedCharacterImageMock).toHaveBeenCalledOnce();
+    await waitForNoElement('[data-testid="character-discovery-review"]');
 
     (document.querySelector('[data-action="open-character"]') as HTMLButtonElement).click();
     await flushUi();
@@ -997,5 +1115,104 @@ describe('bindUi scene switching', () => {
     expect(document.body.textContent).toContain('沈听');
     expect(document.body.textContent).toContain('电影院门口遇到的同龄女生');
     expect(document.querySelector('img[alt="沈听的人物立绘"]')?.getAttribute('src')).toBe('https://example.com/generated-character.png');
+  });
+
+  it('updates existing task characters in the background without showing the review', async () => {
+    requestTaskResultMock.mockResolvedValueOnce({
+      summary: '你和林澄一起整理书包，她提醒你别忘了带练习册。',
+      facts: ['林澄提醒玩家带练习册'],
+      effects: []
+    });
+    requestCharacterDiscoveriesMock.mockResolvedValueOnce([
+      {
+        name: '林澄',
+        aliases: ['同桌'],
+        gender: '女',
+        identity: '同班同学',
+        age: '17岁',
+        personality: '细心、比之前更愿意主动关心玩家',
+        speakingStyle: '轻声提醒，语气自然',
+        relationshipToPlayer: '熟悉的同学，关系更近了一点',
+        appearance: '校服外套，手里拿着练习册',
+        currentLook: '站在课桌旁，把练习册递给玩家',
+        knownFacts: ['林澄提醒玩家别忘了带练习册'],
+        hardRules: ['保持温柔克制的校园恋爱气质'],
+        shouldPersist: true,
+        confidence: 0.95,
+        existingCharacterId: '林澄'
+      }
+    ]);
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-action="open-task-planning"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const contentInput = document.querySelector('[data-task-content]') as HTMLTextAreaElement;
+    contentInput.value = '整理今天要带的课本';
+    (document.querySelector('[data-action="start-task"]') as HTMLButtonElement).click();
+
+    await waitForText('接下来做什么');
+
+    expect(document.querySelector('[data-testid="character-discovery-review"]')).toBeNull();
+    expect(requestGeneratedCharacterImageMock).not.toHaveBeenCalled();
+
+    const storedState = loadStoredGameState();
+    const linCheng = storedState?.world.data.characters.find((character) => character.id === '林澄');
+    expect(linCheng?.knownFacts).toContain('林澄提醒玩家别忘了带练习册');
+    expect(linCheng?.aliases).toContain('同桌');
+    expect(linCheng?.encounterCount).toBe(2);
+  });
+
+  it('fills a missing portrait for an existing character without showing the review', async () => {
+    const initialState = createInitialState();
+    initialState.world.data.characters = initialState.world.data.characters.map((character) =>
+      character.id === '林澄' ? { ...character, imageUrl: undefined } : character
+    );
+    requestTaskResultMock.mockResolvedValueOnce({
+      summary: '林澄在校门口等你，笑着递来一杯热饮。',
+      facts: ['林澄在校门口等玩家'],
+      effects: []
+    });
+    requestCharacterDiscoveriesMock.mockResolvedValueOnce([
+      {
+        name: '林澄',
+        aliases: [],
+        gender: '女',
+        identity: '同班同学',
+        age: '17岁',
+        personality: '温柔、细心',
+        speakingStyle: '轻声说话',
+        relationshipToPlayer: '熟悉的同学',
+        appearance: '校服外套，手里拿着热饮',
+        currentLook: '站在校门口，把热饮递给玩家',
+        knownFacts: ['林澄在校门口等玩家'],
+        hardRules: ['保持温柔克制的校园恋爱气质'],
+        shouldPersist: true,
+        confidence: 0.95,
+        existingCharacterId: '林澄'
+      }
+    ]);
+
+    bindUi(document.querySelector('#app') as HTMLDivElement, initialState);
+
+    (document.querySelector('[data-action="open-task-planning"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const contentInput = document.querySelector('[data-task-content]') as HTMLTextAreaElement;
+    contentInput.value = '去校门口';
+    (document.querySelector('[data-action="start-task"]') as HTMLButtonElement).click();
+
+    for (let index = 0; index < 40 && requestGeneratedCharacterImageMock.mock.calls.length === 0; index += 1) {
+      await waitForStreamFrame();
+      await flushUi();
+    }
+
+    expect(document.querySelector('[data-testid="character-discovery-review"]')).toBeNull();
+    expect(requestGeneratedCharacterImageMock).toHaveBeenCalledOnce();
+
+    const storedState = loadStoredGameState();
+    const linCheng = storedState?.world.data.characters.find((character) => character.id === '林澄');
+    expect(linCheng?.imageUrl).toBe('https://example.com/generated-character.png');
   });
 });

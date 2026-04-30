@@ -1,4 +1,13 @@
-import type { CharacterProfile, EventPhase, GeneratedEvent, Scene, TaskRuntime, TaskSegment, TimeSlot } from '../data/types';
+import type {
+  CharacterDiscoveryCandidate,
+  CharacterProfile,
+  EventPhase,
+  GeneratedEvent,
+  Scene,
+  TaskRuntime,
+  TaskSegment,
+  TimeSlot
+} from '../data/types';
 import type { GameEffect, PlayerAcademics, PlayerAttributes } from '../player/types';
 
 export interface ChatMessage {
@@ -186,24 +195,7 @@ export interface BuildTaskImagePromptRequestInput {
   playerStatePrompt?: string;
 }
 
-export interface CharacterDiscovery {
-  name: string;
-  aliases: string[];
-  gender: string;
-  identity: string;
-  age: string;
-  personality: string;
-  speakingStyle: string;
-  relationshipToPlayer: string;
-  appearance: string;
-  currentLook: string;
-  knownFacts: string[];
-  hardRules: string[];
-  shouldPersist: boolean;
-  confidence: number;
-  existingCharacterId?: string;
-  persistenceReason?: string;
-}
+export type CharacterDiscovery = CharacterDiscoveryCandidate;
 
 export interface BuildCharacterDiscoveryRequestInput {
   model: string;
@@ -1218,12 +1210,14 @@ export const buildCharacterDiscoveryRequest = ({
       role: 'system',
       content: [
         systemPrompt,
-        '你负责在事件或任务结束后，从上下文里提取值得持久化的新人物卡。',
+        '你负责在事件或任务结束后，从上下文里整理本次实际登场过的人物候选。',
         '请输出 JSON 对象，不要添加代码块。',
         '必须包含字段：characters，值为数组。',
         '每个 characters 项必须包含：name, shouldPersist, confidence, gender, identity, age, personality, speakingStyle, relationshipToPlayer, appearance, currentLook, knownFacts, hardRules。',
-        '只有有明确名字或稳定称呼、性格或身份有区分度、后续可能再次出现的人物才 shouldPersist=true。',
-        '无名路人、群众、临时服务员、纯称谓 NPC、只在比喻中出现的人物必须 shouldPersist=false。',
+        '不要用 shouldPersist 过滤输出；它只是给玩家看的推荐标记，最终是否生成信息由玩家手动选择。',
+        '请列出所有在本次上下文中实际登场、被看见、对话或发生互动的人物；即使是短暂登场的人，也可以用稳定称呼作为 name。',
+        '纯背景群众、只在比喻或传闻里出现、没有任何可区分信息的人可以省略。',
+        '对有明确名字或稳定称呼、性格或身份有区分度、后续可能再次出现的人物，shouldPersist=true；其他短暂登场人物 shouldPersist=false 但仍要列出。',
         '如果人物明显对应已有角色，请填 existingCharacterId，不要创建重复人物。',
         'appearance/currentLook 要能直接服务于后续人物立绘生成。'
       ].join('\n')
@@ -1256,8 +1250,8 @@ export const buildCharacterDiscoveryRequest = ({
         }`,
         `原始过程：\n${transcript.length ? transcript.join('\n') : '暂无'}`,
         ...withPlayerStatePrompt(playerStatePrompt),
-        '请回顾本次上下文中玩家实际遇到、对话或互动过的人物。',
-        '如果没有值得持久化的新人物，返回 {"characters":[]}。',
+        '请回顾本次上下文中玩家实际遇到、看见、对话或互动过的所有人物，生成候选列表供玩家手动选择。',
+        '如果没有任何实际登场人物，返回 {"characters":[]}。',
         '输出示例：{"characters":[{"name":"许夏","aliases":[],"shouldPersist":true,"confidence":0.86,"gender":"女","identity":"体育馆里遇到的高年级学生","age":"18岁左右","personality":"直接、热情、有竞争心","speakingStyle":"短句，带一点挑衅但不恶意","relationshipToPlayer":"刚认识","appearance":"短发，运动外套，神情爽朗","currentLook":"训练后站在体育馆灯光下，额前有汗，穿运动外套","knownFacts":["在体育馆训练","主动和玩家搭话"],"hardRules":["不要改成阴郁反派","保持运动系气质"],"persistenceReason":"有名字、外貌和明确互动，适合后续再出现"}]}'
       ].join('\n')
     }

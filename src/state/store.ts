@@ -4,6 +4,7 @@ import { syncLegacyStats, upsertStatInGroups } from '../player/stats';
 import type { GameEffect, PlayerState, PlayerStat, PlayerStatGroup } from '../player/types';
 import type {
   CharacterProfile,
+  CharacterDiscoveryReview,
   EventPhase,
   GeneratedEvent,
   Mode,
@@ -98,6 +99,11 @@ export interface GameState {
   settlement: {
     lastEffects: GameEffect[];
     lastSummary: string;
+  };
+  characterDiscovery: {
+    pendingReview: CharacterDiscoveryReview | null;
+    isProcessing: boolean;
+    error: string | null;
   };
 }
 
@@ -329,6 +335,11 @@ export const createInitialState = (): GameState => ({
   settlement: {
     lastEffects: [],
     lastSummary: ''
+  },
+  characterDiscovery: {
+    pendingReview: null,
+    isProcessing: false,
+    error: null
   }
 });
 
@@ -716,6 +727,57 @@ export const upsertCharacter = (state: GameState, character: CharacterProfile): 
     }
   };
 };
+
+export const setCharacterDiscoveryReview = (
+  state: GameState,
+  review: CharacterDiscoveryReview | null
+): GameState => ({
+  ...state,
+  characterDiscovery: {
+    pendingReview: review,
+    isProcessing: false,
+    error: null
+  }
+});
+
+export const startCharacterDiscoveryProcessing = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isSending: true
+  },
+  characterDiscovery: {
+    ...state.characterDiscovery,
+    isProcessing: true,
+    error: null
+  }
+});
+
+export const finishCharacterDiscoveryProcessing = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isSending: false
+  },
+  characterDiscovery: {
+    pendingReview: null,
+    isProcessing: false,
+    error: null
+  }
+});
+
+export const failCharacterDiscoveryProcessing = (state: GameState, error: string): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isSending: false
+  },
+  characterDiscovery: {
+    ...state.characterDiscovery,
+    isProcessing: false,
+    error
+  }
+});
 
 export const upsertPlayerStatGroup = (state: GameState, group: PlayerStatGroup): GameState => {
   const id = group.id.trim();

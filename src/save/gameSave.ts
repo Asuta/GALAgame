@@ -243,6 +243,11 @@ const sanitizeGameState = (state: GameState): GameState => ({
           streamingLabel: ''
         }
       : null
+  },
+  characterDiscovery: {
+    ...state.characterDiscovery,
+    isProcessing: false,
+    error: null
   }
 });
 
@@ -262,6 +267,11 @@ const stripTemporaryGeneratedImages = (state: GameState): GameState => ({
           generatedImagePrompt: ''
         }
       : null
+  },
+  characterDiscovery: {
+    ...state.characterDiscovery,
+    isProcessing: false,
+    error: null
   }
 });
 
@@ -269,7 +279,8 @@ export const isGameStateBusy = (state: GameState): boolean =>
   state.ui.isSending ||
   state.ui.generatingSceneIds.length > 0 ||
   state.ui.eventImageGeneration.isGenerating ||
-  !!state.task.activeTask?.imageGeneration.isGenerating;
+  !!state.task.activeTask?.imageGeneration.isGenerating ||
+  state.characterDiscovery.isProcessing;
 
 export const normalizeImportedGameState = (
   value: unknown,
@@ -318,6 +329,10 @@ export const normalizeImportedGameState = (
     settlement: {
       ...fallback.settlement,
       ...(isRecord(incoming.settlement) ? incoming.settlement : {})
+    },
+    characterDiscovery: {
+      ...fallback.characterDiscovery,
+      ...(isRecord(incoming.characterDiscovery) ? incoming.characterDiscovery : {})
     }
   };
 
