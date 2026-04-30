@@ -65,6 +65,8 @@ const hydrateCharacterFromBaseline = (character: CharacterProfile, baseline: Cha
     firstMetLocation: character.firstMetLocation ?? baseline.firstMetLocation,
     encounterCount: character.encounterCount ?? baseline.encounterCount,
     imagePrompt: character.imagePrompt ?? baseline.imagePrompt,
+    imageGenerationStatus: character.imageGenerationStatus ?? baseline.imageGenerationStatus,
+    imageGenerationError: character.imageGenerationError ?? baseline.imageGenerationError,
     source: character.source ?? baseline.source,
     imageUrl: character.imageUrl ?? baseline.imageUrl
   };
@@ -139,6 +141,12 @@ export const normalizeWorldData = (value: unknown): WorldData => {
           ...(typeof character.firstMetLocation === 'string' ? { firstMetLocation: character.firstMetLocation } : {}),
           ...(typeof character.encounterCount === 'number' ? { encounterCount: character.encounterCount } : {}),
           ...(typeof character.imagePrompt === 'string' ? { imagePrompt: character.imagePrompt } : {}),
+          ...(character.imageGenerationStatus === 'idle' ||
+          character.imageGenerationStatus === 'generating' ||
+          character.imageGenerationStatus === 'failed'
+            ? { imageGenerationStatus: character.imageGenerationStatus as CharacterProfile['imageGenerationStatus'] }
+            : {}),
+          ...(typeof character.imageGenerationError === 'string' ? { imageGenerationError: character.imageGenerationError } : {}),
           ...(character.source === 'baseline' || character.source === 'runtime_generated'
             ? { source: character.source as CharacterProfile['source'] }
             : {}),
@@ -228,7 +236,8 @@ const sanitizeGameState = (state: GameState): GameState => ({
   event: {
     ...state.event,
     streamingReply: '',
-    streamingLabel: ''
+    streamingLabel: '',
+    isSettling: false
   },
   task: {
     ...state.task,

@@ -274,7 +274,19 @@ export const createAppMarkup = (state: GameState): string => {
   const detailEvent = visibleActiveEvent ?? visiblePreparedEvent ?? (currentScene ? state.event.sceneEventCache[currentScene.id] : null);
 
   const loadingPlaceholder =
-    isGeneratingSceneEvent
+    state.event.isSettling
+      ? `
+        <div class="story-placeholder is-loading event-settlement-loading" data-testid="event-settlement-loading" aria-live="polite">
+          <span class="loading-text">正在结算事件</span>
+          <span class="loading-dots" aria-hidden="true">
+            <span class="loading-dot"></span>
+            <span class="loading-dot"></span>
+            <span class="loading-dot"></span>
+          </span>
+          <small>正在同步处理时间、属性变化、记忆与人物信息。</small>
+        </div>
+      `
+      : isGeneratingSceneEvent
       ? `
         <div class="story-placeholder is-loading" aria-live="polite">
           <span class="loading-text">正在生成事件中</span>
@@ -695,6 +707,27 @@ export const createAppMarkup = (state: GameState): string => {
             const knownFacts = character.knownFacts?.length
               ? character.knownFacts.slice(-4).map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')
               : '<span>还没有更多记录</span>';
+            const imageStatusMarkup =
+              !character.imageUrl && character.imageGenerationStatus === 'generating'
+                ? `
+                  <div class="character-image-status" data-testid="character-image-status">
+                    <strong>立绘生成中</strong>
+                    <span>正在使用已保存提示词生成图片。</span>
+                  </div>
+                `
+                : !character.imageUrl && character.imageGenerationStatus === 'failed'
+                  ? `
+                    <div class="character-image-status character-image-status--failed" data-testid="character-image-status">
+                      <strong>立绘生成失败</strong>
+                      <span>${escapeHtml(character.imageGenerationError ?? '未知错误')}</span>
+                      <button
+                        type="button"
+                        data-character-image-retry="${escapeHtml(character.id)}"
+                        ${character.imagePrompt ? '' : 'disabled'}
+                      >重试生成</button>
+                    </div>
+                  `
+                  : '';
 
             return `
               <article class="character-profile-card" data-testid="character-profile-card">
@@ -733,6 +766,7 @@ export const createAppMarkup = (state: GameState): string => {
                   <div class="character-fact-list">
                     ${knownFacts}
                   </div>
+                  ${imageStatusMarkup}
                 </div>
               </article>
             `;
@@ -1030,7 +1064,7 @@ export const createAppMarkup = (state: GameState): string => {
         ${renderAppTopBar(
           state,
           canUseEventInput
-            ? `${appTopTitle} · ${visibleActiveEvent ? '事件中' : '待开场'} · ${state.settings.currentModel}`
+            ? `${appTopTitle} · ${state.event.isSettling ? '结算中' : visibleActiveEvent ? '事件中' : '待开场'} · ${state.settings.currentModel}`
             : isGeneratingSceneEvent
               ? `${appTopTitle} · 生成中 · ${state.settings.currentModel}`
             : appTopTitle
@@ -1091,7 +1125,7 @@ export const createAppMarkup = (state: GameState): string => {
             `
         }
         <article class="story-box" data-chat-history>
-          ${historyMarkup || loadingPlaceholder || `<div class="story-placeholder">${escapeHtml(emptyPrompt)}</div>`}
+          ${state.event.isSettling ? loadingPlaceholder : historyMarkup || loadingPlaceholder || `<div class="story-placeholder">${escapeHtml(emptyPrompt)}</div>`}
           ${eventImageErrorMarkup}
           ${streamingMarkup}
         </article>
@@ -1118,7 +1152,7 @@ export const createAppMarkup = (state: GameState): string => {
                       : '<button data-action="back">离开地点</button>'
                   }
                   <button data-action="send" ${!state.ui.isSending ? '' : 'disabled'}>
-                    ${escapeHtml(state.ui.isSending ? '生成中' : '发送')}
+                    ${escapeHtml(state.event.isSettling ? '结算中' : state.ui.isSending ? '生成中' : '发送')}
                   </button>
                 </div>
               </div>

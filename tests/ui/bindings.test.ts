@@ -743,7 +743,7 @@ describe('bindUi scene switching', () => {
     expect(document.body.textContent).toContain('结算变化：悟性 +1；资产 +300。');
   });
 
-  it('ends an event after time settlement while character discovery continues in the background', async () => {
+  it('keeps the event in a settlement state until time and character discovery both finish', async () => {
     const settlementDeferred = createDeferred<{
       minutesElapsed: number;
       summary: string;
@@ -784,15 +784,20 @@ describe('bindUi scene switching', () => {
     expect(requestEventTimeSettlementMock).toHaveBeenCalledOnce();
     expect(requestCharacterDiscoveriesMock).toHaveBeenCalledOnce();
     expect(document.querySelector('[data-testid="character-discovery-review"]')).toBeNull();
+    expect(document.querySelector('[data-testid="event-settlement-loading"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('正在结算事件');
 
     settlementDeferred.resolve({
       minutesElapsed: 12,
       summary: '这段事件先完成了时间结算。',
       effects: []
     });
-    await waitForText('这段事件先完成了时间结算。');
+    await flushUi();
+    await waitForStreamFrame();
 
+    expect(document.querySelector('[data-testid="event-settlement-loading"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="character-discovery-review"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('这段事件先完成了时间结算。');
 
     discoveryDeferred.resolve([
       {
@@ -814,8 +819,10 @@ describe('bindUi scene switching', () => {
     ]);
 
     await waitForText('选择要生成信息的人物');
+    expect(document.querySelector('[data-testid="event-settlement-loading"]')).toBeNull();
     expect(document.querySelector('[data-testid="character-discovery-review"]')).not.toBeNull();
     expect(document.body.textContent).toContain('程雪');
+    expect(document.body.textContent).toContain('这段事件先完成了时间结算。');
     expect(requestGeneratedCharacterImageMock).not.toHaveBeenCalled();
   });
 
@@ -1115,6 +1122,87 @@ describe('bindUi scene switching', () => {
     expect(document.body.textContent).toContain('沈听');
     expect(document.body.textContent).toContain('电影院门口遇到的同龄女生');
     expect(document.querySelector('img[alt="沈听的人物立绘"]')?.getAttribute('src')).toBe('https://example.com/generated-character.png');
+  });
+
+  it('records failed character image prompts and retries with the same prompt', async () => {
+    requestTaskResultMock.mockResolvedValueOnce({
+      summary: '你在医院大厅遇见了林护士，她正在交接班。',
+      facts: ['林护士在医院大厅出现'],
+      effects: []
+    });
+    requestCharacterDiscoveriesMock.mockResolvedValueOnce([
+      {
+        name: '林护士',
+        aliases: [],
+        gender: '女',
+        identity: '医院导诊台护士，正在交接班',
+        age: '20岁左右',
+        personality: '职业温和、礼貌、有分寸',
+        speakingStyle: '简短、清楚',
+        relationshipToPlayer: '刚认识，短暂对话',
+        appearance: '坐在导诊台后，胸前名牌写着林护士，窗边夕阳',
+        currentLook: '坐在导诊台后，微笑，胸前名牌写着林护士',
+        knownFacts: ['在导诊台值班', '与玩家简短对话'],
+        hardRules: ['保持职业温和'],
+        shouldPersist: true,
+        confidence: 0.9
+      }
+    ]);
+    requestGeneratedCharacterImageMock.mockRejectedValueOnce(new Error('图片接口临时失败'));
+
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-action="open-task-planning"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const contentInput = document.querySelector('[data-task-content]') as HTMLTextAreaElement;
+    contentInput.value = '去医院大厅咨询';
+    (document.querySelector('[data-action="start-task"]') as HTMLButtonElement).click();
+
+    await waitForText('选择要生成信息的人物');
+    (document.querySelector('[data-character-discovery-index="0"]') as HTMLInputElement).checked = true;
+    (document.querySelector('[data-action="confirm-character-discovery"]') as HTMLButtonElement).click();
+
+    await waitForNoElement('[data-testid="character-discovery-review"]');
+
+    let storedState = loadStoredGameState();
+    let linNurse = storedState?.world.data.characters.find((character) => character.id === '林护士');
+    expect(linNurse?.imageGenerationStatus).toBe('failed');
+    expect(linNurse?.imageGenerationError).toBe('图片接口临时失败');
+    expect(linNurse?.imagePrompt).toContain('现代恋爱向视觉小说人物卡立绘');
+    expect(linNurse?.imageUrl).toBeUndefined();
+
+    const failedPrompt = linNurse?.imagePrompt ?? '';
+
+    (document.querySelector('[data-action="open-character"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    expect(document.body.textContent).toContain('立绘生成失败');
+    expect(document.body.textContent).toContain('图片接口临时失败');
+    (document.querySelector('[data-character-image-retry="林护士"]') as HTMLButtonElement).click();
+
+    for (let index = 0; index < 40 && requestGeneratedCharacterImageMock.mock.calls.length < 2; index += 1) {
+      await waitForStreamFrame();
+      await flushUi();
+    }
+
+    expect(requestGeneratedCharacterImageMock).toHaveBeenCalledTimes(2);
+    expect(requestGeneratedCharacterImageMock.mock.calls[1][0].prompt).toBe(failedPrompt);
+
+    for (let index = 0; index < 40; index += 1) {
+      storedState = loadStoredGameState();
+      linNurse = storedState?.world.data.characters.find((character) => character.id === '林护士');
+
+      if (linNurse?.imageUrl) {
+        break;
+      }
+
+      await waitForStreamFrame();
+      await flushUi();
+    }
+    expect(linNurse?.imageGenerationStatus).toBe('idle');
+    expect(linNurse?.imageGenerationError).toBeUndefined();
+    expect(linNurse?.imageUrl).toBe('https://example.com/generated-character.png');
   });
 
   it('updates existing task characters in the background without showing the review', async () => {

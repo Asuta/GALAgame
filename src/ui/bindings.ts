@@ -93,6 +93,7 @@ import {
   setCharacterDiscoveryReview,
   startEventImageGeneration,
   startEvent,
+  startEventSettlement,
   startCharacterDiscoveryProcessing,
   startStreamingReply,
   updateMemory,
@@ -209,6 +210,8 @@ const buildCharacterFromDiscovery = ({
   firstMetLocation: existing?.firstMetLocation ?? locationLabel,
   encounterCount: (existing?.encounterCount ?? 0) + 1,
   imagePrompt: existing?.imagePrompt,
+  imageGenerationStatus: existing?.imageGenerationStatus,
+  imageGenerationError: existing?.imageGenerationError,
   source: existing?.source ?? 'runtime_generated',
   imageUrl: existing?.imageUrl
 });
@@ -356,6 +359,80 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     return createStoredMediaUrl(key);
   };
 
+  const generateCharacterImage = async ({
+    character,
+    locationLabel,
+    prompt,
+    rerenderDuringGeneration = false
+  }: {
+    character: CharacterProfile;
+    locationLabel: string;
+    prompt: string;
+    rerenderDuringGeneration?: boolean;
+  }): Promise<void> => {
+    let nextCharacter: CharacterProfile = {
+      ...character,
+      imagePrompt: prompt,
+      imageGenerationStatus: 'generating',
+      imageGenerationError: undefined
+    };
+    state = upsertCharacter(state, nextCharacter);
+    if (rerenderDuringGeneration) {
+      rerender();
+    }
+
+    try {
+      const imageUrl = await requestGeneratedCharacterImage({
+        character: nextCharacter,
+        locationLabel,
+        memorySummary: state.memory.summary,
+        prompt
+      });
+      const storedImageUrl = await persistGeneratedMediaReference(`character:${nextCharacter.id}`, imageUrl);
+      nextCharacter = {
+        ...nextCharacter,
+        imageUrl: storedImageUrl,
+        imageGenerationStatus: 'idle',
+        imageGenerationError: undefined
+      };
+      state = upsertCharacter(state, nextCharacter);
+    } catch (error) {
+      state = upsertCharacter(state, {
+        ...nextCharacter,
+        imageGenerationStatus: 'failed',
+        imageGenerationError: error instanceof Error ? error.message : '人物图片生成失败。'
+      });
+    }
+  };
+
+  const retryCharacterImage = async (characterId: string): Promise<void> => {
+    const character = state.world.data.characters.find((item) => item.id === characterId);
+
+    if (!character || character.imageGenerationStatus === 'generating') {
+      return;
+    }
+
+    const prompt = character.imagePrompt?.trim();
+
+    if (!prompt) {
+      state = upsertCharacter(state, {
+        ...character,
+        imageGenerationStatus: 'failed',
+        imageGenerationError: '缺少上一次生成立绘时使用的提示词，无法按原提示词重试。'
+      });
+      rerender();
+      return;
+    }
+
+    await generateCharacterImage({
+      character,
+      locationLabel: character.firstMetLocation ?? resolveLocationLabel(state),
+      prompt,
+      rerenderDuringGeneration: true
+    });
+    rerender();
+  };
+
   const persistCharacterDiscovery = async ({
     discovery,
     existing,
@@ -384,26 +461,11 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         memorySummary: state.memory.summary
       });
 
-      try {
-        const imageUrl = await requestGeneratedCharacterImage({
-          character,
-          locationLabel,
-          memorySummary: state.memory.summary,
-          prompt: imagePrompt
-        });
-        const storedImageUrl = await persistGeneratedMediaReference(`character:${character.id}`, imageUrl);
-        character = {
-          ...character,
-          imageUrl: storedImageUrl,
-          imagePrompt
-        };
-        state = upsertCharacter(state, character);
-      } catch {
-        state = upsertCharacter(state, {
-          ...character,
-          imagePrompt
-        });
-      }
+      await generateCharacterImage({
+        character,
+        locationLabel,
+        prompt: imagePrompt
+      });
     }
   };
 
@@ -741,10 +803,12 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       ]);
 
       if (state.event.readyToEnd && state.event.activeEvent) {
-        const transcriptForMemory = state.event.transcript.map((message) => `${message.label}：${message.content}`);
         const resolvedEvent = state.event.activeEvent;
+        state = startEventSettlement(state);
+        rerender();
+        const transcriptForMemory = state.event.transcript.map((message) => `${message.label}：${message.content}`);
         const resolvedSceneId = resolvedEvent.sceneId;
-        const resolvedTitle = state.event.activeEvent.title;
+        const resolvedTitle = resolvedEvent.title;
         const memoryResult = summarizeResolvedEvent({
           event: resolvedEvent,
           transcript: transcriptForMemory,
@@ -759,16 +823,18 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
           transcript: transcriptForMemory,
           facts: [...resolvedEvent.facts, ...memoryResult.facts]
         };
-        const characterDiscoveryPromise = requestCharacterDiscoveriesForContext(characterDiscoveryContext).catch(() => null);
-        const timeSettlement = await requestEventTimeSettlement({
-          model: state.settings.currentModel,
-          startTimeLabel: state.clock.label,
-          locationLabel: resolvedEvent.locationLabel,
-          eventTitle: resolvedTitle,
-          transcript: transcriptForMemory,
-          eventFacts: resolvedEvent.facts,
-          playerStatePrompt: getPlayerStatePrompt(state)
-        });
+        const [timeSettlement, characterDiscoveries] = await Promise.all([
+          requestEventTimeSettlement({
+            model: state.settings.currentModel,
+            startTimeLabel: state.clock.label,
+            locationLabel: resolvedEvent.locationLabel,
+            eventTitle: resolvedTitle,
+            transcript: transcriptForMemory,
+            eventFacts: resolvedEvent.facts,
+            playerStatePrompt: getPlayerStatePrompt(state)
+          }),
+          requestCharacterDiscoveriesForContext(characterDiscoveryContext).catch(() => null)
+        ]);
         const eventEffectSummary = formatGameEffectsInline(timeSettlement.effects ?? []);
         const eventSettlementSummary = eventEffectSummary
           ? `${timeSettlement.summary} 结算变化：${eventEffectSummary}。`
@@ -783,26 +849,18 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         state = updateMemory(state, memoryResult);
         state = setSceneSummary(state, resolvedSceneId, playerSceneSummary);
         applySettlementEffectsToState(timeSettlement.summary, timeSettlement.effects);
+        if (characterDiscoveries) {
+          await processCharacterDiscoveries(characterDiscoveries, {
+            ...characterDiscoveryContext,
+            timeLabel: state.clock.label,
+            summary: eventSettlementSummary
+          });
+        }
         state = recordWorldAdvance(
           state,
           `事件【${resolvedTitle}】已经自然收束，时间推进了 ${timeSettlement.minutesElapsed} 分钟。${eventSettlementSummary}`
         );
         state = endEvent(state);
-        void characterDiscoveryPromise.then((discoveries) => {
-          if (!discoveries) {
-            return;
-          }
-
-          void processCharacterDiscoveries(discoveries, {
-            ...characterDiscoveryContext,
-            timeLabel: state.clock.label,
-            summary: eventSettlementSummary
-          })
-            .catch(() => undefined)
-            .finally(() => {
-              rerender();
-            });
-        });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
@@ -1429,6 +1487,10 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
     root.querySelectorAll<HTMLButtonElement>('[data-action="open-character"]').forEach((button) => button.addEventListener('click', () => {
       state = openCharacterPage(state);
       rerender();
+    }));
+
+    root.querySelectorAll<HTMLButtonElement>('[data-character-image-retry]').forEach((button) => button.addEventListener('click', () => {
+      void retryCharacterImage(button.dataset.characterImageRetry ?? '');
     }));
 
     root.querySelectorAll<HTMLButtonElement>('[data-action="open-event-details"]').forEach((button) => button.addEventListener('click', () => {

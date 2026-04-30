@@ -129,6 +129,8 @@ export interface CharacterProfile {
   firstMetLocation?: string;
   encounterCount?: number;
   imagePrompt?: string;
+  imageGenerationStatus?: 'idle' | 'generating' | 'failed';
+  imageGenerationError?: string;
   source?: 'baseline' | 'runtime_generated';
   imageUrl?: string;
 }

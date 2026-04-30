@@ -79,6 +79,7 @@ export interface GameState {
     streamingReply: string;
     streamingLabel: string;
     readyToEnd: boolean;
+    isSettling: boolean;
   };
   task: {
     activeTask: TaskRuntime | null;
@@ -314,7 +315,8 @@ export const createInitialState = (): GameState => ({
     transcript: [],
     streamingReply: '',
     streamingLabel: '',
-    readyToEnd: false
+    readyToEnd: false,
+    isSettling: false
   },
   task: {
     activeTask: null,
@@ -881,7 +883,8 @@ export const startEvent = (state: GameState, event: GeneratedEvent): GameState =
       transcript: [],
       streamingReply: '',
       streamingLabel: '',
-      readyToEnd: false
+      readyToEnd: false,
+      isSettling: false
     }
   };
 };
@@ -962,7 +965,8 @@ export const endEvent = (state: GameState): GameState => {
       transcript: [],
       streamingReply: '',
       streamingLabel: '',
-      readyToEnd: false
+      readyToEnd: false,
+      isSettling: false
     }
   };
 };
@@ -1516,7 +1520,8 @@ export const startStreamingReply = (state: GameState, label: string): GameState 
     ...state.event,
     streamingReply: '',
     streamingLabel: label,
-    readyToEnd: false
+    readyToEnd: false,
+    isSettling: false
   }
 });
 
@@ -1550,7 +1555,8 @@ export const finishStreamingReply = (state: GameState): GameState =>
           : state.event.transcript,
         streamingReply: '',
         streamingLabel: '',
-        readyToEnd: state.event.readyToEnd
+        readyToEnd: state.event.readyToEnd,
+        isSettling: state.event.isSettling
       }
     },
     (activeEvent) => {
@@ -1583,7 +1589,8 @@ export const failStreamingReply = (state: GameState, message: string): GameState
     transcript: [...state.event.transcript, { role: 'system', label: '系统', content: `模型调用失败（${message}）` }],
     streamingReply: '',
     streamingLabel: '',
-    readyToEnd: false
+    readyToEnd: false,
+    isSettling: false
   }
 });
 
@@ -1592,6 +1599,18 @@ export const markEventReadyToEnd = (state: GameState): GameState => ({
   event: {
     ...state.event,
     readyToEnd: true
+  }
+});
+
+export const startEventSettlement = (state: GameState): GameState => ({
+  ...state,
+  ui: {
+    ...state.ui,
+    isSending: true
+  },
+  event: {
+    ...state.event,
+    isSettling: true
   }
 });
 
