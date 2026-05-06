@@ -373,13 +373,28 @@ describe('store transitions', () => {
     expect(state.clock.timeSlot).toBe('evening');
   });
 
-  it('stores the latest generated image prompt with the generated image', () => {
+  it('stores the latest generated image prompt and references with the generated image', () => {
     let state = createInitialState();
 
-    state = finishEventImageGeneration(state, 'event-1', 'https://example.com/image.png', '竖屏教室窗边 CG');
+    state = finishEventImageGeneration(state, 'event-1', 'https://example.com/image.png', '竖屏教室窗边 CG', [
+      {
+        kind: 'character',
+        label: '娜娜',
+        url: 'media://character:娜娜',
+        characterId: '娜娜'
+      }
+    ]);
 
     expect(state.event.generatedImages['event-1']).toBe('https://example.com/image.png');
     expect(state.event.generatedImagePrompts['event-1']).toBe('竖屏教室窗边 CG');
+    expect(state.event.generatedImageReferences['event-1']).toEqual([
+      {
+        kind: 'character',
+        label: '娜娜',
+        url: 'media://character:娜娜',
+        characterId: '娜娜'
+      }
+    ]);
   });
 
   it('starts and completes a global task without depending on the current scene', () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { worldData } from '../../src/data/world';
 import { buildFallbackSceneEvent } from '../../src/logic/chatClient';
 import { cacheSceneEvent, createInitialState, enterRegion, enterScene, startEvent } from '../../src/state/store';
-import { collectEventImageReferences, resolveVisualSelection } from '../../src/visual/assetCatalog';
+import { collectEventImageCastNames, collectEventImageReferences, resolveVisualSelection } from '../../src/visual/assetCatalog';
 
 describe('resolveVisualSelection', () => {
   it('keeps the first art pack aligned with the intended region and character set', () => {
@@ -335,6 +335,141 @@ describe('resolveVisualSelection', () => {
         characterId: '主角'
       }
     ]);
+  });
+
+  it('prioritizes characters mentioned in the current moment over the original event cast', () => {
+    const state = createInitialState();
+    const scene = worldData.scenes.find((item) => item.id === 'cinema-gate')!;
+    const event = buildFallbackSceneEvent({
+      scene,
+      locationLabel: '商场 / 电影院门口',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+    const worldWithNana = {
+      ...worldData,
+      characters: [
+        ...worldData.characters,
+        {
+          id: '娜娜',
+          name: '娜娜',
+          aliases: ['咖啡店女生'],
+          gender: '女',
+          identity: '在电影院门口遇到的女生',
+          age: '17岁左右',
+          personality: '明亮直接',
+          speakingStyle: '轻快',
+          relationshipToPlayer: '刚认识',
+          hardRules: [],
+          imageUrl: 'media://character:娜娜'
+        }
+      ]
+    };
+
+    const references = collectEventImageReferences({
+      event: {
+        ...event,
+        cast: ['林澄'],
+        facts: ['事件开场时林澄在附近。', '娜娜站在主角身后，手里拿着樱花拿铁。']
+      },
+      currentRegionId: 'mall',
+      worldData: worldWithNana,
+      transcript: [
+        { label: '你', content: '回头一看，就在身后。' },
+        { label: '旁白', content: '娜娜正站在那里，手里拿着樱花拿铁。' },
+        { label: '娜娜', content: '早上好呀，我找人找得挺认真嘛。' }
+      ]
+    });
+
+    expect(references).toEqual([
+      {
+        kind: 'scene',
+        label: '商场 / 电影院门口',
+        url: '/assets/backgrounds/scene-cinema-gate-main.png'
+      },
+      {
+        kind: 'character',
+        label: '娜娜',
+        url: 'media://character:娜娜',
+        characterId: '娜娜'
+      },
+      {
+        kind: 'character',
+        label: '主角（玩家角色）',
+        url: '/assets/characters/player-protagonist-half-body.png',
+        characterId: '主角'
+      }
+    ]);
+
+    expect(
+      collectEventImageCastNames({
+        event: {
+          ...event,
+          cast: ['林澄'],
+          facts: ['娜娜站在主角身后。']
+        },
+        worldData: worldWithNana,
+        transcript: [{ label: '娜娜', content: '早上好呀。' }]
+      })
+    ).toEqual(['娜娜', '主角（玩家角色）']);
+  });
+
+  it('uses the current moment character name for image prompts even before a portrait exists', () => {
+    const state = createInitialState();
+    const scene = worldData.scenes.find((item) => item.id === 'cinema-gate')!;
+    const event = buildFallbackSceneEvent({
+      scene,
+      locationLabel: '商场 / 电影院门口',
+      memorySummary: state.memory.summary,
+      memoryFacts: state.memory.facts,
+      timeLabel: state.clock.label,
+      timeSlot: state.clock.timeSlot
+    });
+    const worldWithNanaWithoutPortrait = {
+      ...worldData,
+      characters: [
+        ...worldData.characters,
+        {
+          id: '娜娜',
+          name: '娜娜',
+          aliases: [],
+          gender: '女',
+          identity: '在电影院门口遇到的女生',
+          age: '17岁左右',
+          personality: '明亮直接',
+          speakingStyle: '轻快',
+          relationshipToPlayer: '刚认识',
+          hardRules: []
+        }
+      ]
+    };
+
+    expect(
+      collectEventImageReferences({
+        event: {
+          ...event,
+          cast: ['林澄'],
+          facts: ['娜娜站在主角身后。']
+        },
+        currentRegionId: 'mall',
+        worldData: worldWithNanaWithoutPortrait,
+        transcript: [{ label: '娜娜', content: '早上好呀。' }]
+      }).map((reference) => reference.label)
+    ).toEqual(['商场 / 电影院门口', '主角（玩家角色）']);
+
+    expect(
+      collectEventImageCastNames({
+        event: {
+          ...event,
+          cast: ['林澄'],
+          facts: ['娜娜站在主角身后。']
+        },
+        worldData: worldWithNanaWithoutPortrait,
+        transcript: [{ label: '娜娜', content: '早上好呀。' }]
+      })
+    ).toEqual(['娜娜', '主角（玩家角色）']);
   });
 });
 

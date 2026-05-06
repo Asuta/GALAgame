@@ -886,12 +886,11 @@ describe('bindUi scene switching', () => {
       'https://example.com/generated-event.png'
     );
     expect(document.querySelector('[data-testid="visual-character"]')).toBeNull();
-
-    const promptButton = document.querySelector('[data-action="open-image-prompt"]') as HTMLButtonElement;
-    expect(promptButton).not.toBeNull();
-    expect(promptButton.hasAttribute('disabled')).toBe(false);
-    promptButton.click();
+    (document.querySelector('[data-action="open-image-prompt"]') as HTMLButtonElement).click();
     await flushUi();
+    expect(document.body.textContent).toContain('上次参考图');
+    expect(document.body.textContent).toContain('林澄');
+    expect(document.body.textContent).toContain('/assets/characters/lin-cheng-half-body.png');
 
     expect(document.querySelector('[data-testid="image-prompt-page"]')).not.toBeNull();
     expect(document.body.textContent).toContain('\u4e0a\u6b21\u751f\u56fe\u63d0\u793a\u8bcd');

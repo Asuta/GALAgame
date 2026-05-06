@@ -336,6 +336,7 @@ export const createAppMarkup = (state: GameState): string => {
     ? `<div class="event-image-error" role="alert">出图失败：${escapeHtml(eventImageError)}</div>`
     : '';
   const latestImagePrompt = visibleEventForImage ? (state.event.generatedImagePrompts[visibleEventForImage.id] ?? '') : '';
+  const latestImageReferences = visibleEventForImage ? (state.event.generatedImageReferences[visibleEventForImage.id] ?? []) : [];
   const imagePromptButton = visibleEventForImage
     ? `
       <button
@@ -1024,6 +1025,26 @@ export const createAppMarkup = (state: GameState): string => {
   }
 
   if (state.ui.currentPage === 'image-prompt') {
+    const referenceMarkup = latestImageReferences.length
+      ? latestImageReferences
+          .map(
+            (reference, index) => `
+              <article class="image-reference-item">
+                <div class="image-reference-thumb">
+                  <img ${renderImageSourceAttributes(reference.url)} alt="${escapeHtml(reference.label)}参考图" />
+                </div>
+                <div class="image-reference-meta">
+                  <strong>${escapeHtml(reference.kind === 'scene' ? '场景参考图' : '人物参考图')} ${index + 1}</strong>
+                  <span>${escapeHtml(reference.label)}</span>
+                  ${reference.characterId ? `<small>角色 ID：${escapeHtml(reference.characterId)}</small>` : ''}
+                  <code>${escapeHtml(reference.url)}</code>
+                </div>
+              </article>
+            `
+          )
+          .join('')
+      : '<p class="image-reference-empty">上次生图没有传入参考图，或这张图是在旧版本中生成的。</p>';
+
     return `
       <div class="phone-frame phone-frame--settings">
         <section class="settings-page event-details-page" data-testid="image-prompt-page">
@@ -1044,6 +1065,10 @@ export const createAppMarkup = (state: GameState): string => {
             </div>
             <div class="settings-card image-prompt-card">
               <p>${escapeHtml(latestImagePrompt || '还没有生成过图片。回到场景后点击右下角刷新按钮生成一次图片，就能在这里查看最新提示词。')}</p>
+            </div>
+            <div class="settings-card image-reference-card">
+              <h2>上次参考图</h2>
+              <div class="image-reference-list">${referenceMarkup}</div>
             </div>
           </div>
           ${renderBottomNav(state, { hasEventContext: !!(currentScene || visibleActiveEvent || visiblePreparedEvent) })}

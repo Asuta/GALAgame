@@ -1034,7 +1034,9 @@ select:focus-visible {
 .memory-box h3,
 .memory-box p,
 .memory-box li,
-.image-prompt-card p {
+.image-prompt-card p,
+.image-reference-card h2,
+.image-reference-empty {
   margin: 0;
 }
 
@@ -1085,6 +1087,77 @@ select:focus-visible {
 .settings-option-list {
   display: grid;
   gap: 8px;
+}
+
+.image-reference-card h2 {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.image-reference-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.image-reference-item {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(155, 181, 198, 0.14);
+  background: rgba(2, 7, 11, 0.28);
+}
+
+.image-reference-thumb {
+  width: 92px;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border: 1px solid rgba(155, 181, 198, 0.18);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.image-reference-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-reference-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.image-reference-meta strong,
+.image-reference-meta span,
+.image-reference-meta small,
+.image-reference-meta code,
+.image-reference-empty {
+  overflow-wrap: anywhere;
+}
+
+.image-reference-meta strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.image-reference-meta span {
+  color: var(--muted-strong);
+  font-size: 13px;
+}
+
+.image-reference-meta small,
+.image-reference-meta code,
+.image-reference-empty {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .model-option {

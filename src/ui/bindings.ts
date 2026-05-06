@@ -103,7 +103,7 @@ import {
   type GameState
 } from '../state/store';
 import { renderApp } from './renderApp';
-import { collectEventImageReferences } from '../visual/assetCatalog';
+import { collectEventImageCastNames, collectEventImageReferences } from '../visual/assetCatalog';
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;
 
@@ -1269,6 +1269,11 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       worldData: state.world.data,
       transcript: state.event.transcript
     });
+    const imageCastNames = collectEventImageCastNames({
+      event: eventForImage,
+      worldData: state.world.data,
+      transcript: state.event.transcript
+    });
 
     state = startEventImageGeneration(state, eventForImage.id);
     rerender();
@@ -1279,7 +1284,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         model: state.settings.currentModel,
         locationLabel: eventForImage.locationLabel,
         eventTitle: eventForImage.title,
-        castName: eventForImage.cast.length ? eventForImage.cast.join('、') : '旁白',
+        castName: imageCastNames.length ? imageCastNames.join('、') : '旁白',
         eventPhase: eventForImage.currentPhase,
         sceneDescription: scene?.description ?? eventForImage.premise,
         openingState: eventForImage.openingState,
@@ -1303,7 +1308,7 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         }
       });
       const storedImageUrl = await persistGeneratedMediaReference(`event:${eventForImage.id}`, imageUrl);
-      state = finishEventImageGeneration(state, eventForImage.id, storedImageUrl, imagePrompt);
+      state = finishEventImageGeneration(state, eventForImage.id, storedImageUrl, imagePrompt, imageReferences);
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
       state = failEventImageGeneration(state, eventForImage.id, message);

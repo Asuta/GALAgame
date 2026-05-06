@@ -31,7 +31,8 @@ const saveLightweightFallback = (state: GameState): void => {
     ...state,
     event: {
       ...state.event,
-      generatedImages: {}
+      generatedImages: {},
+      generatedImageReferences: {}
     },
     task: {
       ...state.task,

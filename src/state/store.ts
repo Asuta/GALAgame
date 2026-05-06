@@ -18,6 +18,7 @@ import type {
   TimeSlot,
   WorldData
 } from '../data/types';
+import type { EventImageReference } from '../visual/assetCatalog';
 
 export interface TranscriptMessage {
   role: 'player' | 'character' | 'system';
@@ -75,6 +76,7 @@ export interface GameState {
     sceneEventCache: Record<string, GeneratedEvent>;
     generatedImages: Record<string, string>;
     generatedImagePrompts: Record<string, string>;
+    generatedImageReferences: Record<string, EventImageReference[]>;
     transcript: TranscriptMessage[];
     streamingReply: string;
     streamingLabel: string;
@@ -312,6 +314,7 @@ export const createInitialState = (): GameState => ({
     sceneEventCache: {},
     generatedImages: {},
     generatedImagePrompts: {},
+    generatedImageReferences: {},
     transcript: [],
     streamingReply: '',
     streamingLabel: '',
@@ -901,7 +904,13 @@ export const startEventImageGeneration = (state: GameState, eventId: string): Ga
   }
 });
 
-export const finishEventImageGeneration = (state: GameState, eventId: string, imageUrl: string, prompt = ''): GameState => ({
+export const finishEventImageGeneration = (
+  state: GameState,
+  eventId: string,
+  imageUrl: string,
+  prompt = '',
+  references: EventImageReference[] = []
+): GameState => ({
   ...state,
   ui: {
     ...state.ui,
@@ -920,6 +929,10 @@ export const finishEventImageGeneration = (state: GameState, eventId: string, im
     generatedImagePrompts: {
       ...state.event.generatedImagePrompts,
       ...(prompt.trim() ? { [eventId]: prompt.trim() } : {})
+    },
+    generatedImageReferences: {
+      ...state.event.generatedImageReferences,
+      [eventId]: references
     }
   }
 });
@@ -962,6 +975,7 @@ export const endEvent = (state: GameState): GameState => {
         : state.event.sceneEventCache,
       generatedImages: state.event.generatedImages,
       generatedImagePrompts: state.event.generatedImagePrompts,
+      generatedImageReferences: state.event.generatedImageReferences,
       transcript: [],
       streamingReply: '',
       streamingLabel: '',

@@ -274,7 +274,8 @@ const stripTemporaryGeneratedImages = (state: GameState): GameState => ({
   event: {
     ...state.event,
     generatedImages: {},
-    generatedImagePrompts: {}
+    generatedImagePrompts: {},
+    generatedImageReferences: {}
   },
   task: {
     ...state.task,

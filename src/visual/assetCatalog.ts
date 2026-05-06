@@ -223,6 +223,100 @@ const getCharacterReferenceUrl = (character: WorldData['characters'][number]): s
 const characterReferenceNames = (character: WorldData['characters'][number]): string[] =>
   [character.id, character.name, ...(character.aliases ?? [])].map(normalizeReferenceName).filter(Boolean);
 
+const GENERIC_PLAYER_REFERENCE_NAMES = new Set(['你', '我']);
+const NARRATION_REFERENCE_NAMES = new Set(['旁白', '系统', '世界', '角色', '相关角色', '在场角色']);
+
+const countOccurrences = (text: string, term: string): number => {
+  if (!term) {
+    return 0;
+  }
+
+  let count = 0;
+  let position = text.indexOf(term);
+
+  while (position >= 0) {
+    count += 1;
+    position = text.indexOf(term, position + term.length);
+  }
+
+  return count;
+};
+
+const isPlayerCharacter = (character: WorldData['characters'][number]): boolean =>
+  character.id === '主角' || character.name.includes('玩家角色');
+
+const isPlayerReferenceName = (name: string): boolean =>
+  name === '你' || name === '我' || name.includes('主角') || name.includes('玩家');
+
+const isNarrationReferenceName = (name: string): boolean => NARRATION_REFERENCE_NAMES.has(name);
+
+const collectInlineSpeakerNames = (text: string): string[] => {
+  const names: string[] = [];
+  const speakerPattern = /(?:^|\n|[。！？；\s])([\u4e00-\u9fa5A-Za-z0-9_（）()]{1,16})\s*[：:]/g;
+  let match = speakerPattern.exec(text);
+
+  while (match) {
+    const rawName = match[1].trim();
+    const normalized = normalizeReferenceName(rawName);
+
+    if (normalized && !isPlayerReferenceName(normalized) && !isNarrationReferenceName(rawName)) {
+      names.push(rawName);
+    }
+
+    match = speakerPattern.exec(text);
+  }
+
+  return names;
+};
+
+const collectCurrentMomentCharacterNames = (
+  characters: WorldData['characters'],
+  transcript: Array<{ label: string; content?: string }>,
+  recentMomentText: string
+): Set<string> => {
+  const currentNames = new Set<string>();
+
+  for (const message of transcript) {
+    const label = normalizeReferenceName(message.label);
+
+    if (label && !isPlayerReferenceName(label) && !isNarrationReferenceName(message.label)) {
+      currentNames.add(label);
+    }
+
+    for (const speakerName of collectInlineSpeakerNames(message.content ?? '')) {
+      currentNames.add(normalizeReferenceName(speakerName));
+    }
+  }
+
+  for (const character of characters) {
+    if (isPlayerCharacter(character)) {
+      continue;
+    }
+
+    const mentionCount = countCharacterMentions(character, recentMomentText);
+
+    if (mentionCount > 0) {
+      for (const name of characterReferenceNames(character)) {
+        currentNames.add(name);
+      }
+    }
+  }
+
+  return currentNames;
+};
+
+const countCharacterMentions = (
+  character: WorldData['characters'][number],
+  text: string,
+  { includeGenericPlayerPronouns = false }: { includeGenericPlayerPronouns?: boolean } = {}
+): number => {
+  const names = characterReferenceNames(character).filter(
+    (name) => includeGenericPlayerPronouns || !GENERIC_PLAYER_REFERENCE_NAMES.has(name)
+  );
+
+  return names.reduce((count, name) => count + countOccurrences(text, name), 0);
+};
+
 export const collectEventImageReferences = ({
   event,
   currentRegionId,
@@ -246,6 +340,12 @@ export const collectEventImageReferences = ({
   const recentTranscript = transcript.slice(-8);
   const recentSpeakerNames = recentTranscript.map((message) => normalizeReferenceName(message.label)).filter(Boolean);
   const recentSpeakerSet = new Set(recentSpeakerNames);
+  const recentMomentText = recentTranscript
+    .slice(-3)
+    .map((message) => `${message.label} ${message.content ?? ''}`)
+    .join('\n')
+    .toLowerCase();
+  const currentMomentCharacterNames = collectCurrentMomentCharacterNames(worldData.characters, recentTranscript.slice(-3), recentMomentText);
   const searchableStoryText = [
     event.title,
     event.premise,
@@ -268,11 +368,25 @@ export const collectEventImageReferences = ({
       const names = characterReferenceNames(character);
       const castIndex = castNames.findIndex((name) => names.includes(name));
       const latestSpeakerIndex = [...recentSpeakerNames].reverse().findIndex((name) => names.includes(name));
-      const storyMentionCount = names.reduce((count, name) => count + (name && searchableStoryText.includes(name) ? 1 : 0), 0);
+      const isPlayer = isPlayerCharacter(character);
+      const isCurrentMomentCharacter = names.some((name) => currentMomentCharacterNames.has(name));
+      const recentMomentMentionCount = countCharacterMentions(character, recentMomentText);
+      const storyMentionCount =
+        currentMomentCharacterNames.size > 0 && !isPlayer && !isCurrentMomentCharacter
+          ? 0
+          : countCharacterMentions(character, searchableStoryText);
+      const playerPronounMention =
+        isPlayer && (recentSpeakerSet.has('你') || recentMomentText.includes('主角') || recentMomentText.includes('玩家')) ? 1 : 0;
+      const defaultPlayerPresence = isPlayer && (event.cast.length > 0 || transcript.length > 0) ? 1 : 0;
+      const castMatch = names.some((name) => castNameSet.has(name));
+      const allowCastMatch = castMatch && (isPlayer || currentMomentCharacterNames.size === 0 || isCurrentMomentCharacter);
       const exactMatch =
-        names.some((name) => castNameSet.has(name)) ||
+        allowCastMatch ||
         names.some((name) => recentSpeakerSet.has(name)) ||
-        storyMentionCount > 0;
+        recentMomentMentionCount > 0 ||
+        storyMentionCount > 0 ||
+        playerPronounMention > 0 ||
+        defaultPlayerPresence > 0;
 
       if (!exactMatch) {
         return null;
@@ -282,8 +396,11 @@ export const collectEventImageReferences = ({
         character,
         url,
         score:
-          (castIndex >= 0 ? 120 - castIndex * 12 : 0) +
-          (latestSpeakerIndex >= 0 ? 60 - latestSpeakerIndex * 6 : 0) +
+          (recentMomentMentionCount > 0 ? 140 + recentMomentMentionCount * 35 : 0) +
+          (latestSpeakerIndex >= 0 ? 90 - latestSpeakerIndex * 8 : 0) +
+          playerPronounMention * 75 +
+          defaultPlayerPresence * 38 +
+          (castIndex >= 0 && (isPlayer || currentMomentCharacterNames.size === 0 || isCurrentMomentCharacter) ? 45 - castIndex * 8 : 0) +
           storyMentionCount * 8
       };
     })
@@ -298,6 +415,107 @@ export const collectEventImageReferences = ({
     }));
 
   return [...references, ...characterReferences].slice(0, 3);
+};
+
+export const collectEventImageCastNames = ({
+  event,
+  worldData,
+  transcript = []
+}: {
+  event: GeneratedEvent;
+  worldData: WorldData;
+  transcript?: Array<{ label: string; content?: string }>;
+}): string[] => {
+  const recentTranscript = transcript.slice(-8);
+  const recentMomentTranscript = recentTranscript.slice(-3);
+  const recentMomentText = recentMomentTranscript
+    .map((message) => `${message.label} ${message.content ?? ''}`)
+    .join('\n')
+    .toLowerCase();
+  const currentMomentCharacterNames = collectCurrentMomentCharacterNames(
+    worldData.characters,
+    recentMomentTranscript,
+    recentMomentText
+  );
+  const searchableStoryText = [
+    event.title,
+    event.premise,
+    event.openingState,
+    event.currentPhase,
+    ...event.facts,
+    ...recentTranscript.map((message) => `${message.label} ${message.content ?? ''}`)
+  ]
+    .join('\n')
+    .toLowerCase();
+  const scoredNames = worldData.characters
+    .map((character) => {
+      const names = characterReferenceNames(character);
+      const isPlayer = isPlayerCharacter(character);
+      const isCurrentMomentCharacter = names.some((name) => currentMomentCharacterNames.has(name));
+      const latestSpeakerIndex = [...recentTranscript]
+        .reverse()
+        .findIndex((message) => names.includes(normalizeReferenceName(message.label)));
+      const castIndex = event.cast.map(normalizeReferenceName).findIndex((name) => names.includes(name));
+      const recentMomentMentionCount = countCharacterMentions(character, recentMomentText);
+      const storyMentionCount =
+        currentMomentCharacterNames.size > 0 && !isPlayer && !isCurrentMomentCharacter
+          ? 0
+          : countCharacterMentions(character, searchableStoryText);
+      const playerPresence =
+        isPlayer &&
+        (recentTranscript.some((message) => isPlayerReferenceName(normalizeReferenceName(message.label))) ||
+          recentMomentText.includes('主角') ||
+          recentMomentText.includes('玩家') ||
+          event.cast.length > 0);
+
+      if (
+        latestSpeakerIndex < 0 &&
+        (castIndex < 0 || (currentMomentCharacterNames.size > 0 && !isPlayer && !isCurrentMomentCharacter)) &&
+        recentMomentMentionCount <= 0 &&
+        storyMentionCount <= 0 &&
+        !playerPresence
+      ) {
+        return null;
+      }
+
+      return {
+        name: character.name,
+        score:
+          (recentMomentMentionCount > 0 ? 140 + recentMomentMentionCount * 35 : 0) +
+          (latestSpeakerIndex >= 0 ? 90 - latestSpeakerIndex * 8 : 0) +
+          (playerPresence ? 75 : 0) +
+          (castIndex >= 0 && (isPlayer || currentMomentCharacterNames.size === 0 || isCurrentMomentCharacter) ? 45 - castIndex * 8 : 0) +
+          storyMentionCount * 8
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => !!item)
+    .sort((left, right) => right.score - left.score)
+    .map((item) => item.name);
+  const inlineSpeakerNames = recentMomentTranscript.flatMap((message) => [
+    ...collectInlineSpeakerNames(message.content ?? ''),
+    ...(isPlayerReferenceName(normalizeReferenceName(message.label)) || isNarrationReferenceName(message.label) ? [] : [message.label])
+  ]);
+  const names = [...scoredNames];
+
+  for (const speakerName of inlineSpeakerNames) {
+    if (!names.includes(speakerName)) {
+      names.unshift(speakerName);
+    }
+  }
+
+  if (!names.some((name) => name.includes('玩家角色')) && (event.cast.length || transcript.length)) {
+    const playerCharacter = worldData.characters.find(isPlayerCharacter);
+
+    if (playerCharacter) {
+      names.push(playerCharacter.name);
+    }
+  }
+
+  if (!names.length) {
+    return event.cast.slice(0, 3);
+  }
+
+  return names.slice(0, 3);
 };
 
 export const resolveVisualSelection = (state: GameState): VisualSelection => {

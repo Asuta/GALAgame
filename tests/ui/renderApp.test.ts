@@ -177,7 +177,19 @@ describe('renderApp', () => {
       timeSlot: state.clock.timeSlot
     });
     state = startEvent(state, event);
-    state = finishEventImageGeneration(state, event.id, 'https://example.com/event.png', '\u56fa\u5b9a\u63d0\u793a\u8bcd\uff1a\u7a97\u8fb9\u5bf9\u89c6');
+    state = finishEventImageGeneration(state, event.id, 'https://example.com/event.png', '\u56fa\u5b9a\u63d0\u793a\u8bcd\uff1a\u7a97\u8fb9\u5bf9\u89c6', [
+      {
+        kind: 'scene',
+        label: '\u5b66\u6821 / \u6559\u5ba4',
+        url: '/assets/backgrounds/scene-classroom-main.png'
+      },
+      {
+        kind: 'character',
+        label: '\u6797\u6f84',
+        url: '/assets/characters/lin-cheng-half-body.png',
+        characterId: '\u6797\u6f84'
+      }
+    ]);
 
     document.body.innerHTML = '<div id="app"></div>';
     renderApp(document.querySelector('#app') as HTMLDivElement, state);
@@ -210,7 +222,19 @@ describe('renderApp', () => {
       timeSlot: state.clock.timeSlot
     });
     state = startEvent(state, event);
-    state = finishEventImageGeneration(state, event.id, 'https://example.com/event.png', '\u56fa\u5b9a\u63d0\u793a\u8bcd\uff1a\u7a97\u8fb9\u5bf9\u89c6');
+    state = finishEventImageGeneration(state, event.id, 'https://example.com/event.png', '\u56fa\u5b9a\u63d0\u793a\u8bcd\uff1a\u7a97\u8fb9\u5bf9\u89c6', [
+      {
+        kind: 'scene',
+        label: '\u5b66\u6821 / \u6559\u5ba4',
+        url: '/assets/backgrounds/scene-classroom-main.png'
+      },
+      {
+        kind: 'character',
+        label: '\u6797\u6f84',
+        url: '/assets/characters/lin-cheng-half-body.png',
+        characterId: '\u6797\u6f84'
+      }
+    ]);
     state = openImagePromptPage(state);
 
     document.body.innerHTML = '<div id="app"></div>';
@@ -220,6 +244,12 @@ describe('renderApp', () => {
     expect(document.body.textContent).toContain('\u4e0a\u6b21\u751f\u56fe\u63d0\u793a\u8bcd');
     expect(document.body.textContent).toContain('\u56fa\u5b9a\u63d0\u793a\u8bcd\uff1a\u7a97\u8fb9\u5bf9\u89c6');
     expect(document.body.textContent).toContain('\u4e0a\u6b21\u751f\u56fe\u63d0\u793a\u8bcd');
+    expect(document.body.textContent).toContain('\u4e0a\u6b21\u53c2\u8003\u56fe');
+    expect(document.body.textContent).toContain('\u573a\u666f\u53c2\u8003\u56fe 1');
+    expect(document.body.textContent).toContain('\u4eba\u7269\u53c2\u8003\u56fe 2');
+    expect(document.querySelector('img[alt="\u6797\u6f84\u53c2\u8003\u56fe"]')?.getAttribute('src')).toBe(
+      '/assets/characters/lin-cheng-half-body.png'
+    );
   });
 
   it('shows image generation progress and errors on the event image button', () => {
