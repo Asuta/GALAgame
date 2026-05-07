@@ -368,11 +368,11 @@ describe('imageClient', () => {
     expect(payload.input.messages[0].content[0].image).toMatch(/^data:image\/png;base64,/);
     expect(payload.input.messages[0].content[1].image).toMatch(/^data:image\/png;base64,/);
     expect(payload.input.messages[0].content[2].text).toContain('学校 / 教室');
-    expect(payload.input.messages[0].content[2].text).toContain('参考图说明');
-    expect(payload.input.messages[0].content[2].text).toContain('第 1 张是画面参考图');
+    expect(payload.input.messages[0].content[2].text).not.toContain('参考图说明');
+    expect(payload.input.messages[0].content[2].text).not.toContain('第 1 张是画面参考图');
   });
 
-  it('reads stored media references and labels them in the event image prompt guide', async () => {
+  it('reads stored media references without changing the provided event image prompt', async () => {
     vi.stubEnv('VITE_IMAGE_API_BASE_URL', 'https://example.com/v1/images/generations');
     vi.stubEnv('VITE_IMAGE_API_KEY', 'image-key');
 
@@ -410,7 +410,8 @@ describe('imageClient', () => {
     const payload = JSON.parse(String(init.body));
     expect(loadMediaBlob).toHaveBeenCalledWith('character:沈听');
     expect(payload.input.messages[0].content[0].image).toMatch(/^data:image\/png;base64,/);
-    expect(payload.input.messages[0].content[1].text).toContain('第 1 张是角色「沈听」的人物立绘参考');
+    expect(payload.input.messages[0].content[1].text).not.toContain('参考图说明');
+    expect(payload.input.messages[0].content[1].text).not.toContain('沈听');
   });
 
   it('skips broken reference images instead of failing the whole event image request', async () => {

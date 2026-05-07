@@ -103,7 +103,11 @@ describe('chatClient helpers', () => {
       eventFacts: ['林澄把练习册合上'],
       memorySummary: '你们刚建立一点信任。',
       memoryFacts: ['她不太愿意直接说出心事'],
-      transcript: ['你：你看起来有点心事。', '林澄：只是有点冷。']
+      transcript: ['你：你看起来有点心事。', '林澄：只是有点冷。'],
+      imageReferences: [
+        { index: 1, kind: 'scene', label: '学校 / 教室' },
+        { index: 2, kind: 'character', label: '林澄', characterId: '林澄' }
+      ]
     });
 
     expect(payload.model).toBe('deepseek-chat');
@@ -111,10 +115,15 @@ describe('chatClient helpers', () => {
     expect(payload.messages[0].content).toContain('二次元动漫视觉小说 CG 插画风格');
     expect(payload.messages[0].content).toContain('禁止写成真实照片');
     expect(payload.messages[0].content).toContain('禁止使用“你、我、他、她、TA、对方”等人称代词');
+    expect(payload.messages[0].content).toContain('直接使用“图一、图二、图三”');
+    expect(payload.messages[0].content).toContain('不要在提示词末尾写“参考图说明”');
     expect(payload.messages[0].content).toContain('描述玩家时写“主角（玩家角色）”');
     expect(payload.messages[1].content).toContain('学校 / 教室');
     expect(payload.messages[1].content).toContain('林澄把练习册合上');
     expect(payload.messages[1].content).toContain('你：你看起来有点心事。');
+    expect(payload.messages[1].content).toContain('图一：场景参考图，内容是「学校 / 教室」');
+    expect(payload.messages[1].content).toContain('图二：人物参考图，角色是「林澄」');
+    expect(payload.messages[1].content).toContain('图二里的人物');
     expect(payload.messages[1].content).toContain('最终提示词不得出现“你、我、他、她、TA、对方”这些代词');
     expect(payload.messages[1].content).toContain('不要真实照片或写实摄影');
   });

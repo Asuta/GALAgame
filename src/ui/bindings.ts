@@ -1,4 +1,10 @@
-import { buildCharacterPortraitPrompt, requestGeneratedCharacterImage, requestGeneratedEventImage, requestGeneratedTaskImage } from '../logic/imageClient';
+import {
+  buildCharacterPortraitPrompt,
+  prepareEventImageReferences,
+  requestGeneratedCharacterImage,
+  requestGeneratedEventImage,
+  requestGeneratedTaskImage
+} from '../logic/imageClient';
 import {
   requestCharacterDiscoveries,
   requestEventImagePrompt,
@@ -103,7 +109,7 @@ import {
   type GameState
 } from '../state/store';
 import { renderApp } from './renderApp';
-import { collectEventImageCastNames, collectEventImageReferences } from '../visual/assetCatalog';
+import { collectEventImageCastNames, collectEventImageReferences, type EventImageReference } from '../visual/assetCatalog';
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 16;
 
@@ -1280,6 +1286,15 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
 
     try {
       const transcript = state.event.transcript.map((message) => `${message.label}：${message.content}`);
+      const preparedImageReferences = await prepareEventImageReferences(imageReferences, {
+        loadMediaBlob,
+        onReferenceImageWarning: (message) => {
+          console.warn(`事件生图参考图跳过：${message}`);
+        }
+      });
+      const loadedImageReferences = preparedImageReferences
+        .map((item) => item.reference)
+        .filter((reference): reference is EventImageReference => reference.kind === 'scene' || reference.kind === 'character');
       const imagePrompt = await requestEventImagePrompt({
         model: state.settings.currentModel,
         locationLabel: eventForImage.locationLabel,
@@ -1291,7 +1306,13 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         eventFacts: eventForImage.facts,
         memorySummary: state.memory.summary,
         memoryFacts: state.memory.facts,
-        transcript
+        transcript,
+        imageReferences: preparedImageReferences.map((item) => ({
+          index: item.index,
+          kind: item.reference.kind,
+          label: item.reference.label,
+          characterId: item.reference.characterId
+        }))
       });
       const imageUrl = await requestGeneratedEventImage({
         event: eventForImage,
@@ -1301,14 +1322,14 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
         transcript,
         memorySummary: state.memory.summary,
         memoryFacts: state.memory.facts,
-        imageReferences,
+        imageReferences: loadedImageReferences,
         loadMediaBlob,
         onReferenceImageWarning: (message) => {
           console.warn(`事件生图参考图跳过：${message}`);
         }
       });
       const storedImageUrl = await persistGeneratedMediaReference(`event:${eventForImage.id}`, imageUrl);
-      state = finishEventImageGeneration(state, eventForImage.id, storedImageUrl, imagePrompt, imageReferences);
+      state = finishEventImageGeneration(state, eventForImage.id, storedImageUrl, imagePrompt, loadedImageReferences);
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
       state = failEventImageGeneration(state, eventForImage.id, message);

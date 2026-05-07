@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   requestGeneratedEventImageMock,
@@ -140,6 +140,17 @@ const waitForNoElement = async (selector: string) => {
   throw new Error(`Timed out waiting for element to disappear: ${selector}`);
 };
 
+const waitForMockCall = async (mock: { mock: { calls: unknown[] } }) => {
+  for (let index = 0; index < 20; index += 1) {
+    if (mock.mock.calls.length > 0) {
+      return;
+    }
+
+    await flushUi();
+    await waitForStreamTick();
+  }
+};
+
 const createDeferred = <T>() => {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -149,6 +160,24 @@ const createDeferred = <T>() => {
   });
 
   return { promise, resolve, reject };
+};
+
+const mockStaticAssetFetch = () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input);
+
+    if (url.includes('/assets/')) {
+      return new Response(new Blob(['image-bytes'], { type: 'image/png' }), {
+        status: 200,
+        headers: { 'content-type': 'image/png' }
+      });
+    }
+
+    return new Response('{}', {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  });
 };
 
 describe('bindUi scene switching', () => {
@@ -204,6 +233,10 @@ describe('bindUi scene switching', () => {
     requestGeneratedTaskImageMock.mockResolvedValue('https://example.com/generated-task.png');
     requestGeneratedCharacterImageMock.mockResolvedValue('https://example.com/generated-character.png');
     requestEventImagePromptMock.mockResolvedValue('生成的固定生图提示词：当前她把练习册合上，窗边两人对视。');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('keeps a generated scene event waiting until the player sends a message', async () => {
@@ -827,6 +860,7 @@ describe('bindUi scene switching', () => {
   });
 
   it('generates an event image from the waiting event and uses it as the visual background', async () => {
+    mockStaticAssetFetch();
     const imageDeferred = createDeferred<string>();
     requestGeneratedEventImageMock.mockReturnValueOnce(imageDeferred.promise);
     requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
@@ -852,12 +886,33 @@ describe('bindUi scene switching', () => {
     generateButton.click();
     await flushUi();
     expect(document.querySelector('[data-action="generate-event-image"]')?.classList.contains('is-loading')).toBe(true);
+    await waitForMockCall(requestGeneratedEventImageMock);
     imageDeferred.resolve('https://example.com/generated-event.png');
     await flushUi();
 
     expect(requestGeneratedEventImageMock).toHaveBeenCalledOnce();
     expect(requestEventImagePromptMock).toHaveBeenCalledOnce();
     expect(requestEventImagePromptMock.mock.calls[0][0].eventTitle).toContain('放学后的空教室');
+    expect(requestEventImagePromptMock.mock.calls[0][0].imageReferences).toEqual([
+      {
+        index: 1,
+        kind: 'scene',
+        label: '学校 / 教室',
+        characterId: undefined
+      },
+      {
+        index: 2,
+        kind: 'character',
+        label: '林澄',
+        characterId: '林澄'
+      },
+      {
+        index: 3,
+        kind: 'character',
+        label: '主角（玩家角色）',
+        characterId: '主角'
+      }
+    ]);
     expect(requestGeneratedEventImageMock.mock.calls[0][0].event.cast).toContain('林澄');
     expect(requestGeneratedEventImageMock.mock.calls[0][0].transcript).toEqual([]);
     expect(requestGeneratedEventImageMock.mock.calls[0][0].memorySummary).toContain('你刚开始');
@@ -898,6 +953,7 @@ describe('bindUi scene switching', () => {
   });
 
   it('passes the latest transcript into event image prompt generation', async () => {
+    mockStaticAssetFetch();
     let initialState = createInitialState();
     initialState = {
       ...initialState,
@@ -931,8 +987,7 @@ describe('bindUi scene switching', () => {
     bindUi(document.querySelector('#app') as HTMLDivElement, initialState);
 
     (document.querySelector('[data-action="generate-event-image"]') as HTMLButtonElement).click();
-    await flushUi();
-    await flushUi();
+    await waitForMockCall(requestGeneratedEventImageMock);
 
     const promptInput = requestEventImagePromptMock.mock.calls[0][0];
     const imageInput = requestGeneratedEventImageMock.mock.calls[0][0];
@@ -942,6 +997,7 @@ describe('bindUi scene switching', () => {
   });
 
   it('shows an event image generation error without blocking story controls', async () => {
+    mockStaticAssetFetch();
     requestGeneratedEventImageMock.mockRejectedValueOnce(new Error('图片额度不足'));
     requestGeneratedSceneEventMock.mockImplementation(async ({ scene, locationLabel, memorySummary, memoryFacts, timeLabel, timeSlot }) =>
       buildFallbackSceneEvent({
@@ -961,7 +1017,7 @@ describe('bindUi scene switching', () => {
     await flushUi();
 
     (document.querySelector('[data-action="generate-event-image"]') as HTMLButtonElement).click();
-    await flushUi();
+    await waitForMockCall(requestGeneratedEventImageMock);
     await flushUi();
 
     expect(document.body.textContent).toContain('出图失败：图片额度不足');

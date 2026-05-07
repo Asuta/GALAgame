@@ -38,6 +38,12 @@ export interface EventImageReferenceInput {
   characterId?: string;
 }
 
+export interface PreparedEventImageReference {
+  reference: EventImageReferenceInput;
+  image: string;
+  index: number;
+}
+
 export interface ReadImageUrlAsDataUrlOptions {
   fetchImpl?: typeof fetch;
   loadMediaBlob?: (key: string) => Promise<Blob | null>;
@@ -217,6 +223,41 @@ export const readImageUrlAsDataUrl = async (
   const bytes = await response.arrayBuffer();
 
   return await blobToDataUrl(new Blob([bytes], { type: contentType }));
+};
+
+export const prepareEventImageReferences = async (
+  imageReferences: EventImageReferenceInput[] = [],
+  {
+    fetchImpl = fetch,
+    loadMediaBlob,
+    onReferenceImageWarning
+  }: {
+    fetchImpl?: typeof fetch;
+    loadMediaBlob?: (key: string) => Promise<Blob | null>;
+    onReferenceImageWarning?: (message: string) => void;
+  } = {}
+): Promise<PreparedEventImageReference[]> => {
+  const referenceResults = await Promise.all(
+    imageReferences.slice(0, 3).map(async (reference) => {
+      try {
+        return {
+          reference,
+          image: await readImageUrlAsDataUrl(reference.url, { fetchImpl, loadMediaBlob })
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '参考图读取失败。';
+        onReferenceImageWarning?.(`${reference.label}：${message}`);
+        return null;
+      }
+    })
+  );
+
+  return referenceResults
+    .filter((item): item is NonNullable<typeof item> => !!item)
+    .map((item, index) => ({
+      ...item,
+      index: index + 1
+    }));
 };
 
 export const extractGeneratedImageUrls = (responseBody: unknown): string[] => {
@@ -410,29 +451,16 @@ export const requestGeneratedEventImage = async ({
           label: `参考图 ${index + 1}`,
           url
         }));
-  const referenceResults = await Promise.all(
-    referenceInputs.slice(0, 3).map(async (reference) => {
-      try {
-        return {
-          reference,
-          image: await readImageUrlAsDataUrl(reference.url, { fetchImpl, loadMediaBlob })
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '参考图读取失败。';
-        onReferenceImageWarning?.(`${reference.label}：${message}`);
-        return null;
-      }
-    })
-  );
-  const loadedReferences = referenceResults.filter((item): item is NonNullable<typeof item> => !!item);
+  const loadedReferences = await prepareEventImageReferences(referenceInputs, {
+    fetchImpl,
+    loadMediaBlob,
+    onReferenceImageWarning
+  });
   const referenceImages = loadedReferences.map((item) => item.image);
   const eventPrompt = prompt?.trim() || buildEventImagePrompt({ event, scene, locationLabel, transcript, memorySummary, memoryFacts });
   const payload = buildImageGenerationPayload({
     model: config.model,
-    prompt: appendEventImageReferenceGuide(
-      eventPrompt,
-      loadedReferences.map((item) => item.reference)
-    ),
+    prompt: eventPrompt,
     referenceImages
   });
   const response = await fetchImpl(config.endpoint, {

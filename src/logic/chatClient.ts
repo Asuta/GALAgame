@@ -128,6 +128,12 @@ export interface BuildEventImagePromptRequestInput {
   memorySummary: string;
   memoryFacts: string[];
   transcript: string[];
+  imageReferences?: Array<{
+    index: number;
+    kind: 'scene' | 'character' | 'reference';
+    label: string;
+    characterId?: string;
+  }>;
 }
 
 export interface BuildFallbackTimeSettlementInput {
@@ -904,6 +910,27 @@ const splitCastNames = (castName: string): string[] =>
     .map((value) => value.trim())
     .filter((value) => value && value !== '旁白' && value !== '无固定角色');
 
+const imageReferenceNumberLabel = (index: number): string => {
+  const labels = ['图一', '图二', '图三'];
+  return labels[index - 1] ?? `图${index}`;
+};
+
+const formatEventImageReferenceForPrompt = (
+  reference: NonNullable<BuildEventImagePromptRequestInput['imageReferences']>[number]
+): string => {
+  const imageLabel = imageReferenceNumberLabel(reference.index);
+
+  if (reference.kind === 'scene') {
+    return `${imageLabel}：场景参考图，内容是「${reference.label}」。`;
+  }
+
+  if (reference.kind === 'character') {
+    return `${imageLabel}：人物参考图，角色是「${reference.label}」。`;
+  }
+
+  return `${imageLabel}：画面参考图，内容是「${reference.label}」。`;
+};
+
 export const rewriteEventImagePromptObjectively = (prompt: string, castName: string): string => {
   const primaryCastName = splitCastNames(castName)[0] ?? '相关角色';
   const playerName = '主角（玩家角色）';
@@ -933,10 +960,15 @@ export const buildEventImagePromptRequest = ({
   eventFacts,
   memorySummary,
   memoryFacts,
-  transcript
-}: BuildEventImagePromptRequestInput): ChatRequestPayload => ({
-  model,
-  messages: [
+  transcript,
+  imageReferences = []
+}: BuildEventImagePromptRequestInput): ChatRequestPayload => {
+  const imageReferenceLines = imageReferences.map(formatEventImageReferenceForPrompt);
+  const imageReferenceLabels = imageReferences.map((reference) => imageReferenceNumberLabel(reference.index));
+
+  return {
+    model,
+    messages: [
     {
       role: 'system',
       content: [
@@ -944,13 +976,21 @@ export const buildEventImagePromptRequest = ({
         '你只输出最终生图提示词，不要解释，不要 JSON，不要 Markdown。',
         '提示词必须描述当前剧情这一刻的可视画面，而不是复述所有上下文。',
         '必须保留地点、主要角色、当前动作/距离/情绪、构图、光影和画风要求。',
+        imageReferenceLines.length
+          ? '最终提示词必须直接使用“图一、图二、图三”这样的编号来指代参考图中的场景或人物，并描述这些图中对象在最终画面里的位置、动作、表情、朝向和互动关系。'
+          : '',
+        imageReferenceLines.length
+          ? '不要在提示词末尾写“参考图说明”或“第几张是某角色”这种后置说明；参考图关系必须融入画面描述正文。'
+          : '',
         '最终生图提示词必须使用客观镜头语言，禁止使用“你、我、他、她、TA、对方”等人称代词。',
         '描述玩家时写“主角（玩家角色）”；描述人物卡角色时直接写角色名，例如“林澄”“周然”。',
         '如果上下文里原本有“你：”这样的玩家发言，只能理解为“主角（玩家角色）”，最终提示词里不要保留“你：”。',
         '构图必须是横屏 16:10，适合偏横向的视觉小说图片窗口，避免竖屏全身肖像导致裁切。',
         '画风必须统一为高质量二次元动漫视觉小说 CG 插画风格，禁止写成真实照片、真人摄影、写实摄影、电影剧照、3D 渲染或欧美写实风格。',
         '不要生成文字、UI、水印、logo。'
-      ].join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n')
     },
     {
       role: 'user',
@@ -965,18 +1005,26 @@ export const buildEventImagePromptRequest = ({
         `世界记忆摘要：${memorySummary || '暂无'}`,
         `关键记忆：${memoryFacts.length ? memoryFacts.join('；') : '暂无'}`,
         `最近对话：\n${transcript.length ? transcript.slice(-10).join('\n') : '暂无'}`,
+        imageReferenceLines.length ? `本次实际传入的参考图：\n${imageReferenceLines.join('\n')}` : '本次没有参考图。',
         '',
         '请把以上上下文浓缩成一个适合文生图/图生图的中文提示词。',
         '提示词需要像导演分镜一样明确“此刻画面”，可以补充合理动作和表情，但不要加入上下文没有支撑的新剧情。',
+        imageReferenceLines.length
+          ? `最终提示词必须直接写 ${imageReferenceLabels.join('、')} 在画面里的位置、动作、表情和互动，例如“图二里的人物站在画面左侧，侧身看向图三里的人物”。`
+          : '',
+        imageReferenceLines.length ? '不要输出“参考图说明：”“第 1 张是……”这类后置说明。' : '',
         `最终提示词里出现玩家时必须写作“主角（玩家角色）”；出现主要角色时必须写具体名字：${castName || '无固定角色'}。`,
         '最终提示词不得出现“你、我、他、她、TA、对方”这些代词。',
         '提示词里必须明确写出“横屏 16:10 构图，适合视觉小说横向画面窗口”。',
         '提示词里必须明确写出“二次元动漫视觉小说 CG 风格”，并明确不要真实照片或写实摄影。',
         '输出一段完整提示词，长度控制在 300 字以内。'
-      ].join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n')
     }
   ]
-});
+  };
+};
 
 export const buildTaskResultRequest = ({
   model,
