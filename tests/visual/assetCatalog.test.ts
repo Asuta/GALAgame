@@ -25,7 +25,16 @@ describe('resolveVisualSelection', () => {
       'balcony',
       'entryway'
     ]);
-    expect(worldData.characters.map((character) => character.id)).toEqual(['主角', '林澄', '周然']);
+    expect(worldData.characters.map((character) => character.id)).toEqual([
+      '主角',
+      '林澄',
+      '周然',
+      '夏栀',
+      '许夏',
+      '顾晚星',
+      '白芷',
+      '唐柚'
+    ]);
   });
 
   it('returns the city map before a region is selected', () => {

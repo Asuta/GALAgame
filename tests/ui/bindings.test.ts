@@ -322,7 +322,7 @@ describe('bindUi scene switching', () => {
       })
     );
     requestStoryReplyStreamMock.mockImplementation(async function* () {
-      yield '旁白：体育馆门口的许夏朝你挥了挥手。[EVENT_END]';
+      yield '旁白：体育馆门口的梁晴朝你挥了挥手。[EVENT_END]';
     });
     requestCharacterDiscoveriesMock.mockResolvedValueOnce([
       {
@@ -343,7 +343,7 @@ describe('bindUi scene switching', () => {
         existingCharacterId: '林澄'
       },
       {
-        name: '许夏',
+        name: '梁晴',
         aliases: [],
         gender: '女',
         identity: '体育馆里遇到的高年级学生',
@@ -353,7 +353,7 @@ describe('bindUi scene switching', () => {
         relationshipToPlayer: '刚认识',
         appearance: '短发，运动外套，神情爽朗',
         currentLook: '站在体育馆门口，额前有汗，穿运动外套',
-        knownFacts: ['在体育馆附近主动和玩家搭话'],
+        knownFacts: ['梁晴在体育馆附近主动和玩家搭话'],
         hardRules: ['保持运动系气质'],
         shouldPersist: true,
         confidence: 0.9
@@ -377,7 +377,7 @@ describe('bindUi scene switching', () => {
     const optionText = Array.from(document.querySelectorAll('[data-testid="character-discovery-option"]'))
       .map((option) => option.textContent ?? '')
       .join('\n');
-    expect(optionText).toContain('许夏');
+    expect(optionText).toContain('梁晴');
     expect(optionText).not.toContain('林澄');
     expect(requestGeneratedCharacterImageMock).not.toHaveBeenCalled();
 
@@ -402,7 +402,7 @@ describe('bindUi scene switching', () => {
     expect(document.querySelector('[data-testid="character-page"]')).not.toBeNull();
     expect(document.body.textContent).toContain('人物图鉴');
     expect(document.body.textContent).toContain('体育馆里遇到的高年级学生');
-    expect(document.querySelector('img[alt="许夏的人物立绘"]')?.getAttribute('src')).toBe('https://example.com/generated-character.png');
+    expect(document.querySelector('img[alt="梁晴的人物立绘"]')?.getAttribute('src')).toBe('https://example.com/generated-character.png');
   });
 
   it('does not end a hidden previous event when leaving a newly selected loading scene', async () => {
