@@ -724,7 +724,6 @@ export const createAppMarkup = (state: GameState): string => {
                       <button
                         type="button"
                         data-character-image-retry="${escapeHtml(character.id)}"
-                        ${character.imagePrompt ? '' : 'disabled'}
                       >重试生成</button>
                     </div>
                   `
@@ -738,6 +737,14 @@ export const createAppMarkup = (state: GameState): string => {
                       ? `<img ${renderImageSourceAttributes(character.imageUrl)} alt="${escapeHtml(character.name)}的人物立绘" />`
                       : `<div class="character-profile-placeholder" aria-label="${escapeHtml(character.name)}暂无立绘">${escapeHtml(character.name.slice(0, 2))}</div>`
                   }
+                  <button
+                    class="character-image-regenerate"
+                    type="button"
+                    data-character-image-retry="${escapeHtml(character.id)}"
+                    aria-label="重新生成${escapeHtml(character.name)}的人物立绘"
+                    title="重新生成图片"
+                    ${character.imageGenerationStatus === 'generating' ? 'disabled' : ''}
+                  >↻</button>
                 </div>
                 <div class="character-profile-body">
                   <div class="character-profile-kicker">

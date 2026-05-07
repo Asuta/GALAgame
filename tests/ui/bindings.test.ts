@@ -1276,6 +1276,39 @@ describe('bindUi scene switching', () => {
     expect(linNurse?.imageUrl).toBe('https://example.com/generated-character.png');
   });
 
+  it('regenerates an existing character portrait from the character gallery', async () => {
+    bindUi(document.querySelector('#app') as HTMLDivElement);
+
+    (document.querySelector('[data-action="open-character"]') as HTMLButtonElement).click();
+    await flushUi();
+
+    const retryButton = document.querySelector('[aria-label="重新生成主角（玩家角色）的人物立绘"]') as HTMLButtonElement;
+    expect(retryButton).not.toBeNull();
+    retryButton.click();
+
+    for (let index = 0; index < 40 && requestGeneratedCharacterImageMock.mock.calls.length === 0; index += 1) {
+      await waitForStreamFrame();
+      await flushUi();
+    }
+
+    expect(requestGeneratedCharacterImageMock).toHaveBeenCalledOnce();
+    expect(requestGeneratedCharacterImageMock.mock.calls[0][0].character.id).toBe('主角');
+    expect(requestGeneratedCharacterImageMock.mock.calls[0][0].prompt).toContain('现代恋爱向视觉小说人物卡立绘');
+
+    let storedState = loadStoredGameState();
+    let playerCharacter = storedState?.world.data.characters.find((character) => character.id === '主角');
+
+    for (let index = 0; index < 40 && playerCharacter?.imageUrl !== 'https://example.com/generated-character.png'; index += 1) {
+      await waitForStreamFrame();
+      await flushUi();
+      storedState = loadStoredGameState();
+      playerCharacter = storedState?.world.data.characters.find((character) => character.id === '主角');
+    }
+
+    expect(playerCharacter?.imageGenerationStatus).toBe('idle');
+    expect(playerCharacter?.imageUrl).toBe('https://example.com/generated-character.png');
+  });
+
   it('updates existing task characters in the background without showing the review', async () => {
     requestTaskResultMock.mockResolvedValueOnce({
       summary: '你和林澄一起整理书包，她提醒你别忘了带练习册。',

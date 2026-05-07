@@ -418,7 +418,13 @@ export const bindUi = (root: HTMLDivElement, initialState = createInitialState()
       return;
     }
 
-    const prompt = character.imagePrompt?.trim();
+    const prompt =
+      character.imagePrompt?.trim() ||
+      buildCharacterPortraitPrompt({
+        character,
+        locationLabel: character.firstMetLocation ?? resolveLocationLabel(state),
+        memorySummary: state.memory.summary
+      });
 
     if (!prompt) {
       state = upsertCharacter(state, {

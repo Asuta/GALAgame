@@ -543,6 +543,7 @@ describe('renderApp', () => {
       '/assets/characters/player-protagonist-half-body.png'
     );
     expect(document.querySelector('img[alt="沈听的人物立绘"]')?.getAttribute('data-media-src')).toBe('media://character:沈听');
+    expect(document.querySelector('[aria-label="重新生成沈听的人物立绘"]')).not.toBeNull();
     expect(document.body.textContent).toContain('主角状态');
     expect(document.body.textContent).toContain('当前资产');
     expect(document.body.textContent).toContain('500');
